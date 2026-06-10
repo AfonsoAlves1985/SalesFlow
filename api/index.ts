@@ -1,6 +1,6 @@
 import { createApp } from '../server.js';
 
-let app: Awaited<ReturnType<typeof createApp>> | null = null;
+let app: any = null;
 
 export default async function handler(req: any, res: any) {
   try {

@@ -23,6 +23,14 @@
       }
     },
     {
+      "src": "/api/ping",
+      "dest": "api/ping.ts"
+    },
+    {
+      "src": "/api/test",
+      "dest": "api/test.ts"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "api/index.ts"
     },
