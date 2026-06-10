@@ -337,7 +337,7 @@ export default function StockManagement({
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right font-bold text-slate-900">
-                        R$ {p.price.toFixed(2)}
+                        R$ {Number(p.price || 0).toFixed(2)}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-center gap-1.5">

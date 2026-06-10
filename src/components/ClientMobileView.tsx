@@ -186,7 +186,7 @@ export default function ClientMobileView({
 
   const getComandaTotal = () => {
     if (!currentComanda) return 0;
-    return currentComanda.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    return currentComanda.items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
@@ -386,13 +386,13 @@ export default function ClientMobileView({
                   <div>
                     <span className="text-[8px] uppercase font-black text-slate-400 block">📅 Data</span>
                     <span className="font-extrabold text-slate-700 text-[11px]">
-                      {new Date(viewingItemDetail.timestamp).toLocaleDateString('pt-BR')}
+                      {new Date(viewingItemDetail.timestamp || Date.now()).toLocaleDateString('pt-BR')}
                     </span>
                   </div>
                   <div>
                     <span className="text-[8px] uppercase font-black text-slate-400 block">🕒 Hora</span>
                     <span className="font-extrabold text-slate-700 text-[11px]">
-                      {new Date(viewingItemDetail.timestamp).toLocaleTimeString('pt-BR')}
+                      {new Date(viewingItemDetail.timestamp || Date.now()).toLocaleTimeString('pt-BR')}
                     </span>
                   </div>
                 </div>
@@ -400,7 +400,7 @@ export default function ClientMobileView({
                 <div className="grid grid-cols-3 gap-1 py-1 px-1.5 bg-slate-50 border border-slate-100 rounded-lg">
                   <div>
                     <span className="text-[8px] text-slate-400 font-bold block">Valor</span>
-                    <span className="font-bold text-slate-700">R$ {viewingItemDetail.price.toFixed(2)}</span>
+                    <span className="font-bold text-slate-700">R$ {Number(viewingItemDetail.price || 0).toFixed(2)}</span>
                   </div>
                   <div className="text-center">
                     <span className="text-[8px] text-slate-400 font-bold block">Quant.</span>
@@ -409,7 +409,7 @@ export default function ClientMobileView({
                   <div className="text-right">
                     <span className="text-[8px] text-slate-400 font-bold block">Total</span>
                     <span className="font-extrabold text-[#C5A059]">
-                      R$ {(viewingItemDetail.price * viewingItemDetail.quantity).toFixed(2)}
+                      R$ {(Number(viewingItemDetail.price || 0) * Number(viewingItemDetail.quantity || 0)).toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -601,7 +601,7 @@ export default function ClientMobileView({
                             {item.quantity}x {item.productName}
                           </span>
                           <span className="text-slate-900 font-mono font-bold">
-                            R$ {(item.price * item.quantity).toFixed(2)}
+                            R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}
                           </span>
                         </div>
                       ))
@@ -786,11 +786,11 @@ export default function ClientMobileView({
                           >
                             <div className="flex-1 min-w-0 pr-2">
                               <span className="font-bold text-slate-800 block truncate group-hover/item:text-[#C5A059] transition">{item.productName}</span>
-                              <span className="text-[9px] font-mono text-slate-400">{item.productCode} • {item.quantity} un x R$ {item.price.toFixed(2)}</span>
+                              <span className="text-[9px] font-mono text-slate-400">{item.productCode} • {item.quantity} un x R$ {Number(item.price || 0).toFixed(2)}</span>
                             </div>
 
                             <div className="flex flex-col items-end">
-                              <span className="font-black text-slate-900">R$ {(item.price * item.quantity).toFixed(2)}</span>
+                              <span className="font-black text-slate-900">R$ {(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}</span>
                               
                               {/* Client side signature actions */}
                               {isSigned ? (
@@ -841,7 +841,7 @@ export default function ClientMobileView({
                         <option value="">-- Escolha um produto --</option>
                         {products.filter(p => p.stock > 0).map(p => (
                           <option key={p.id} value={p.id}>
-                            {p.name} - R$ {p.price.toFixed(2)} ({p.stock} un disponíveis)
+                            {p.name} - R$ {Number(p.price || 0).toFixed(2)} ({p.stock} un disponíveis)
                           </option>
                         ))}
                       </select>
@@ -865,7 +865,7 @@ export default function ClientMobileView({
                         <div className="flex-1 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100 flex flex-col justify-center text-right">
                           <span className="text-[8px] uppercase text-indigo-500 tracking-wider font-bold">Subtotal Estimado</span>
                           <span className="text-sm font-black text-indigo-950">
-                            R$ {(products.find(p => p.id === selectedProductId)!.price * orderQuantity).toFixed(2)}
+                            R$ {(Number(products.find(p => p.id === selectedProductId)?.price || 0) * Number(orderQuantity || 0)).toFixed(2)}
                           </span>
                         </div>
                       )}

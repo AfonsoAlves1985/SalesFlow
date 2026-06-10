@@ -36,7 +36,7 @@ export default function ComandaList({
 
   // Calculates the sum of values of the items in a comanda
   const getComandaTotal = (comanda: Comanda) => {
-    return comanda.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    return comanda.items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
   };
 
   const filteredComandas = comandas.filter(comanda => {

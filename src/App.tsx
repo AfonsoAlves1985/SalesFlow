@@ -1376,7 +1376,7 @@ export default function App() {
     return comandas
       .filter(c => c.status === 'Pago' && c.closedAt && c.closedAt >= shift.openedAt && (!shift.closedBy || c.closedAt <= shift.openedAt))
       .reduce((val, c) => {
-        const comandaValue = c.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        const comandaValue = c.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
         return val + comandaValue;
       }, 0);
   };
@@ -1958,7 +1958,7 @@ export default function App() {
                         </span>
                         <button
                           onClick={() => {
-                            setCloseActualCash(activeShift.initialBalance + getShiftRevenue(activeShift));
+                            setCloseActualCash(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0));
                             setIsShiftCloseModalOpen(true);
                           }}
                           className="bg-[#C5A059] hover:bg-[#B38F4B] text-black px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 cursor-pointer shadow-sm"
@@ -2099,23 +2099,23 @@ export default function App() {
                               <div className="grid grid-cols-3 gap-2">
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Abertura</span>
-                                  <span className="text-xs font-black text-slate-700">R$ {activeShift.initialBalance.toFixed(2)}</span>
+                                  <span className="text-xs font-black text-slate-700">R$ {Number(activeShift.initialBalance || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Vendas Caixa</span>
-                                  <span className="text-xs font-black text-emerald-600 font-mono">+R$ {getShiftRevenue(activeShift).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-emerald-600 font-mono">+R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="bg-[#C5A059]/10 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Estimado</span>
-                                  <span className="text-xs font-black text-[#C5A059] font-mono">R$ {(activeShift.initialBalance + getShiftRevenue(activeShift)).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-[#C5A059] font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
                                 </div>
                               </div>
                               
-                              <p className="text-[10px] text-slate-400">Iniciado em: <strong className="text-slate-600 font-semibold">{new Date(activeShift.openedAt).toLocaleString('pt-BR')}</strong></p>
+                              <p className="text-[10px] text-slate-400">Iniciado em: <strong className="text-slate-600 font-semibold">{new Date(activeShift.openedAt || Date.now()).toLocaleString('pt-BR')}</strong></p>
 
                               <button
                                 onClick={() => {
-                                  setCloseActualCash(activeShift.initialBalance + getShiftRevenue(activeShift));
+                                  setCloseActualCash(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0));
                                   setIsShiftCloseModalOpen(true);
                                 }}
                                 className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
@@ -2166,15 +2166,15 @@ export default function App() {
                                     <div>
                                       <div className="font-extrabold text-slate-800 font-mono text-[11px]">{shf.id}</div>
                                       <span className="text-[9px] text-slate-400 block mt-0.5">Operado por {shf.closedBy}</span>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5">{new Date(shf.openedAt).toLocaleDateString('pt-BR')} {new Date(shf.openedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5">{new Date(shf.openedAt || Date.now()).toLocaleDateString('pt-BR')} {new Date(shf.openedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                                     </div>
                                     <div className="text-right">
-                                      <span className="font-bold text-slate-800 block">Faturado: R$ {devRevenue.toFixed(2)}</span>
+                                      <span className="font-bold text-slate-800 block">Faturado: R$ {Number(devRevenue || 0).toFixed(2)}</span>
                                       {diff === 0 ? (
                                         <span className="text-[9px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">Sem Divergência</span>
                                       ) : (
                                         <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${diff > 0 ? 'bg-[#C5A059]/10 text-[#C5A059]' : 'bg-rose-50 text-rose-600'}`}>
-                                          Contagem: {diff > 0 ? '+' : ''}R$ {diff.toFixed(2)}
+                                          Contagem: {diff > 0 ? '+' : ''}R$ {Number(diff || 0).toFixed(2)}
                                         </span>
                                       )}
                                     </div>
@@ -2754,7 +2754,7 @@ export default function App() {
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                   Enviado
                                 </span>
-                                <span className="text-[9px] text-slate-400 block mt-1">{new Date(notif.timestamp).toLocaleTimeString('pt-BR')}</span>
+                                <span className="text-[9px] text-slate-400 block mt-1">{new Date(notif.timestamp || Date.now()).toLocaleTimeString('pt-BR')}</span>
                               </div>
                             </div>
                           ))
@@ -3080,16 +3080,16 @@ export default function App() {
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1 bg-slate-50/50 font-sans">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Saldo Inicial:</span>
-                  <span className="font-bold text-slate-800">R$ {activeShift.initialBalance.toFixed(2)}</span>
+                  <span className="font-bold text-slate-800">R$ {Number(activeShift.initialBalance || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Vendas do Turno (+):</span>
-                  <span className="font-bold text-emerald-600 font-mono">+ R$ {getShiftRevenue(activeShift).toFixed(2)}</span>
+                  <span className="font-bold text-emerald-600 font-mono">+ R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
                 </div>
                 <hr className="border-slate-200 border-dashed my-1" />
                 <div className="flex justify-between font-extrabold text-slate-900">
                   <span>Valor Calculado Estimado:</span>
-                  <span className="text-[#C5A059] font-mono">R$ {(activeShift.initialBalance + getShiftRevenue(activeShift)).toFixed(2)}</span>
+                  <span className="text-[#C5A059] font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
                 </div>
               </div>
 

@@ -35,7 +35,7 @@ export default function ComandaDetailView({
   const [viewingItemDetail, setViewingItemDetail] = useState<OrderedItem | null>(null);
 
   const getComandaTotal = () => {
-    return comanda.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    return comanda.items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
   };
 
   const getWhatsAppUrl = () => {
@@ -43,7 +43,7 @@ export default function ComandaDetailView({
     
     const itemsText = comanda.items.length === 0 
       ? '_Nenhum item registrado ainda._' 
-      : comanda.items.map(item => `• *${item.quantity}x ${item.productName}* - R$ ${(item.price * item.quantity).toFixed(2)}`).join('\n');
+      : comanda.items.map(item => `• *${item.quantity}x ${item.productName}* - R$ ${(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}`).join('\n');
       
     const comandaLiveUrl = typeof window !== 'undefined' 
       ? `${window.location.origin}${window.location.pathname}?comanda=${comanda.id}` 
@@ -107,7 +107,7 @@ export default function ComandaDetailView({
             <span className="text-[10px] font-black tracking-widest text-[#4F46E5] uppercase px-2 py-0.5 bg-indigo-50 rounded-full">
               Comanda Individual
             </span>
-            <span className="text-[10px] text-slate-600 font-bold">Criado em: {new Date(comanda.createdAt).toLocaleDateString('pt-BR')}</span>
+            <span className="text-[10px] text-slate-600 font-bold">Criado em: {new Date(comanda.createdAt || Date.now()).toLocaleDateString('pt-BR')}</span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 mt-1 flex items-center gap-2">
             {comanda.clientName}
@@ -163,7 +163,7 @@ export default function ComandaDetailView({
                     </tr>
                   ) : (
                     comanda.items.map((item) => {
-                      const itemSubtotal = item.price * item.quantity;
+                      const itemSubtotal = Number(item.price || 0) * Number(item.quantity || 0);
                       const isItemSigned = !!item.signature;
 
                       return (
@@ -176,9 +176,9 @@ export default function ComandaDetailView({
                           <td className="py-3 px-3 font-mono text-[10px] text-slate-600 font-bold group-hover/row:text-semibold group-hover/row:text-[#C5A059] transition">{item.productCode}</td>
                           <td className="py-3 px-3">
                             <span className="font-extrabold text-slate-900 block group-hover/row:text-[#C5A059] transition">{item.productName}</span>
-                            <span className="text-[10px] text-slate-500 font-semibold">Inserido em {new Date(item.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-[10px] text-slate-500 font-semibold">Inserido em {new Date(item.timestamp || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                           </td>
-                          <td className="py-3 px-3 text-right font-semibold">R$ {item.price.toFixed(2)}</td>
+                          <td className="py-3 px-3 text-right font-semibold">R$ {Number(item.price || 0).toFixed(2)}</td>
                           
                           {/* Quantity Editor */}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -215,7 +215,7 @@ export default function ComandaDetailView({
                           </td>
 
                           <td className="py-3 px-3 text-right font-bold text-slate-900">
-                            R$ {itemSubtotal.toFixed(2)}
+                            R$ {Number(itemSubtotal || 0).toFixed(2)}
                           </td>
 
                           {/* Digital Signature Confirmation representation */}
@@ -236,7 +236,7 @@ export default function ComandaDetailView({
                                   </span>
                                 )}
                                 {item.signedAt && (
-                                  <span className="text-[9px] text-slate-600 font-bold block mt-0.5">{new Date(item.signedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span className="text-[9px] text-slate-600 font-bold block mt-0.5">{new Date(item.signedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                                 )}
                               </div>
                             ) : (
@@ -277,7 +277,7 @@ export default function ComandaDetailView({
                     <option value="">-- Selecione um produto para adicionar rápido --</option>
                     {availableProductsForDropdown.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} - R$ {p.price.toFixed(2)} (Estoque: {p.stock} un)
+                        {p.name} - R$ {Number(p.price || 0).toFixed(2)} (Estoque: {p.stock} un)
                       </option>
                     ))}
                   </select>
@@ -455,7 +455,7 @@ export default function ComandaDetailView({
                 <div>
                   <span className="text-[9px] uppercase font-black text-slate-400 block mb-0.5">📅 Data de Lançamento</span>
                   <span className="font-extrabold text-slate-800 text-xs">
-                    {new Date(viewingItemDetail.timestamp).toLocaleDateString('pt-BR')}
+                    {new Date(viewingItemDetail.timestamp || Date.now()).toLocaleDateString('pt-BR')}
                   </span>
                 </div>
                 <div>
@@ -469,7 +469,7 @@ export default function ComandaDetailView({
               <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-slate-50/70 border border-slate-100 rounded-2xl">
                 <div>
                   <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Preço Unitário</span>
-                  <span className="font-extrabold text-slate-700">R$ {viewingItemDetail.price.toFixed(2)}</span>
+                  <span className="font-extrabold text-slate-700">R$ {Number(viewingItemDetail.price || 0).toFixed(2)}</span>
                 </div>
                 <div className="text-center">
                   <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Quantidade</span>
@@ -478,7 +478,7 @@ export default function ComandaDetailView({
                 <div className="text-right">
                   <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Subtotal Geral</span>
                   <span className="font-black text-[#C5A059] text-sm">
-                    R$ {(viewingItemDetail.price * viewingItemDetail.quantity).toFixed(2)}
+                    R$ {(Number(viewingItemDetail.price || 0) * Number(viewingItemDetail.quantity || 0)).toFixed(2)}
                   </span>
                 </div>
               </div>
