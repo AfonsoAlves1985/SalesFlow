@@ -12,7 +12,10 @@ export async function createApp() {
   app.use(express.json({ limit: "15mb" }));
 
   // File-based simple data-store for robust persistent sandbox
-  const DB_FILE = path.join(process.cwd(), "data-store.json");
+  const isVercel = process.env.VERCEL === "1";
+  const DB_FILE = isVercel
+    ? path.join("/tmp", "data-store.json")
+    : path.join(process.cwd(), "data-store.json");
 
   let db = {
     products: INITIAL_PRODUCTS,
@@ -314,7 +317,7 @@ export async function createApp() {
   });
 
   // --- VITE MIDDLEWARE OR STATIC SERVER ---
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "custom",
@@ -335,10 +338,22 @@ export async function createApp() {
     });
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        const indexPath = path.join(distPath, "index.html");
+        if (fs.existsSync(indexPath)) {
+          res.sendFile(indexPath);
+        } else {
+          res.status(200).json({ api: "SalesFlow API running on Vercel" });
+        }
+      });
+    } else {
+      // On Vercel serverless, static files are served separately
+      app.get("*", (req, res) => {
+        res.status(200).json({ api: "SalesFlow API running on Vercel" });
+      });
+    }
   }
 
   if (process.env.VERCEL !== '1') {
