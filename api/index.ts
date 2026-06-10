@@ -1,8 +1,9 @@
-import { createApp } from '../server.js';
+// @ts-nocheck
+const { createApp } = require('../server.js');
 
-let app: Awaited<ReturnType<typeof createApp>> | null = null;
+let app = null;
 
-export default async function handler(req: any, res: any) {
+module.exports = async function handler(req, res) {
   try {
     if (!app) {
       console.log('[SalesFlow API] Creating Express app...');
@@ -10,7 +11,7 @@ export default async function handler(req: any, res: any) {
       console.log('[SalesFlow API] Express app created successfully');
     }
     return app(req, res);
-  } catch (err: any) {
+  } catch (err) {
     console.error('[SalesFlow API] Handler error:', err?.message || err);
     console.error('[SalesFlow API] Stack:', err?.stack);
     res.status(500).json({ 
@@ -18,4 +19,4 @@ export default async function handler(req: any, res: any) {
       message: err?.message || 'Unknown error'
     });
   }
-}
+};
