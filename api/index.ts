@@ -25,6 +25,60 @@ function sanitizeState(state: any) {
   };
 }
 
+function normalizeWhatsAppNumber(phone: string) {
+  let cleanPhone = String(phone || '').replace(/\D/g, '');
+  if (cleanPhone && cleanPhone.length >= 10 && !cleanPhone.startsWith('55')) {
+    cleanPhone = `55${cleanPhone}`;
+  }
+  return cleanPhone;
+}
+
+function getPublicOrigin(req: any) {
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'salesflow-pi.vercel.app';
+  return `${proto}://${host}`;
+}
+
+function getComandaAccessMessage(comanda: any, accessUrl: string) {
+  return `*SalesFlow - Acesso à Comanda*\n\nOlá, *${comanda.clientName || 'Cliente'}*!\n\nSua comanda digital foi aberta com sucesso.\n\n*Código:* ${comanda.id}\n*Unidade:* ${comanda.unit || 'Sede Principal'}\n*Referência:* ${comanda.courseOrTraining || 'Atendimento'}\n*Status:* ${comanda.status || 'Pendente'}\n\nAcesse pelo link abaixo para acompanhar seu consumo, conferir itens lançados e assinar digitalmente seus pedidos:\n${accessUrl}\n\nApresente esta comanda no caixa para fechamento e pagamento.`;
+}
+
+function getManualWhatsAppUrl(phone: string, message: string) {
+  const number = normalizeWhatsAppNumber(phone);
+  return number
+    ? `https://api.whatsapp.com/send?phone=${number}&text=${encodeURIComponent(message)}`
+    : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+}
+
+async function sendEvolutionText(number: string, text: string) {
+  const baseUrl = (process.env.EVOLUTION_API_URL || process.env.EVOLUTION_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+  const apiKey = process.env.EVOLUTION_API_KEY || '';
+  const instance = process.env.EVOLUTION_INSTANCE_NAME || process.env.EVOLUTION_INSTANCE || 'salesflow';
+
+  if (!baseUrl || !instance) {
+    return { success: false, error: 'Evolution não configurado no ambiente do servidor.' };
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.apikey = apiKey;
+
+  const response = await fetch(`${baseUrl}/message/sendText/${encodeURIComponent(instance)}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ number, text })
+  });
+
+  const raw = await response.text();
+  let data: any = raw;
+  try { data = JSON.parse(raw); } catch {}
+
+  if (!response.ok) {
+    return { success: false, error: typeof data === 'string' ? data : data?.message || 'Falha ao enviar pela Evolution.' };
+  }
+
+  return { success: true, data };
+}
+
 // --- Supabase integration ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -258,6 +312,49 @@ app.post('/api/whatsapp/config', (req: any, res: any) => {
   if (req.body?.number) db.whatsNumber = req.body.number;
   saveDb();
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
+});
+
+app.post('/api/whatsapp/send-comanda-link', async (req: any, res: any) => {
+  const comanda = req.body?.comanda;
+  if (!comanda?.id) return res.status(400).json({ success: false, error: 'Comanda inválida.' });
+
+  const accessUrl = req.body?.accessUrl || `${getPublicOrigin(req)}?comanda=${encodeURIComponent(comanda.id)}`;
+  const message = req.body?.message || getComandaAccessMessage(comanda, accessUrl);
+  const phone = comanda.clientPhone || req.body?.phone || '';
+  const number = normalizeWhatsAppNumber(phone);
+  const manualUrl = getManualWhatsAppUrl(phone, message);
+
+  let result: any = { success: false, error: 'Telefone do cliente não cadastrado.' };
+  if (number) {
+    result = await sendEvolutionText(number, message);
+  }
+
+  const notification = {
+    id: `NOT-W-LINK-${Math.floor(1000 + Math.random() * 9000)}`,
+    timestamp: new Date().toISOString(),
+    recipient: comanda.clientName || 'Cliente',
+    course: comanda.courseOrTraining || 'Geral',
+    contact: phone || 'Sem telefone',
+    type: 'WhatsApp',
+    message,
+    status: result.success ? 'Sucesso' : 'Falha',
+    sender: result.success ? (db.whatsNumber || 'Evolution') : 'Evolution indisponível'
+  };
+
+  db.notifications.unshift(notification);
+  db.notifications = db.notifications.slice(0, 50);
+  saveDb();
+  syncToSupabase();
+
+  res.status(result.success ? 200 : 202).json({
+    success: result.success,
+    error: result.error,
+    notification,
+    accessUrl,
+    message,
+    manualUrl,
+    evolution: result.data
+  });
 });
 
 app.post('/api/whatsapp/connect', (req: any, res: any) => {

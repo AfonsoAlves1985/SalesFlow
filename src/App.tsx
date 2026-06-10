@@ -960,6 +960,77 @@ export default function App() {
     }, 6000);
   };
 
+  const getComandaAccessUrl = (comanda: Comanda) => {
+    return `${window.location.origin}${window.location.pathname}?comanda=${encodeURIComponent(comanda.id)}`;
+  };
+
+  const getComandaAccessMessage = (comanda: Comanda) => {
+    const accessUrl = getComandaAccessUrl(comanda);
+    return `*SalesFlow - Acesso à Comanda*\n\nOlá, *${comanda.clientName || 'Cliente'}*!\n\nSua comanda digital foi aberta com sucesso.\n\n*Código:* ${comanda.id}\n*Unidade:* ${comanda.unit || 'Sede Principal'}\n*Referência:* ${comanda.courseOrTraining || 'Atendimento'}\n*Status:* ${comanda.status}\n\nAcesse pelo link abaixo para acompanhar seu consumo, conferir itens lançados e assinar digitalmente seus pedidos:\n${accessUrl}\n\nApresente esta comanda no caixa para fechamento e pagamento.`;
+  };
+
+  const getManualWhatsAppUrl = (phone: string, message: string) => {
+    let cleanPhone = String(phone || '').replace(/\D/g, '');
+    if (cleanPhone && cleanPhone.length >= 10 && !cleanPhone.startsWith('55')) {
+      cleanPhone = `55${cleanPhone}`;
+    }
+    return cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+  };
+
+  const dispatchComandaAccessWhatsApp = async (comanda: Comanda) => {
+    const message = getComandaAccessMessage(comanda);
+    const accessUrl = getComandaAccessUrl(comanda);
+    const phone = comanda.clientPhone || '';
+
+    const notificationId = `toast-comanda-link-${Date.now()}`;
+    try {
+      const res = await fetch('/api/whatsapp/send-comanda-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comanda, message, accessUrl })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (data.notification) {
+        setNotifications(prev => {
+          const next = [data.notification, ...prev.filter(n => n.id !== data.notification.id)].slice(0, 50);
+          localStorage.setItem('salesflow_notifications', JSON.stringify(next));
+          return next;
+        });
+      }
+
+      setActiveToasts(prev => [
+        ...prev,
+        {
+          id: notificationId,
+          title: data.success ? 'Link da Comanda Enviado' : 'Link da Comanda Gerado',
+          description: data.success
+            ? `WhatsApp enviado para ${phone || comanda.clientName}.`
+            : `Evolution não confirmou envio. Use o botão WhatsApp manual se necessário.`,
+          type: data.success ? 'email' : 'sms'
+        }
+      ]);
+    } catch (err) {
+      console.error('Falha ao disparar link da comanda:', err);
+      window.open(getManualWhatsAppUrl(phone, message), '_blank', 'noopener,noreferrer');
+      setActiveToasts(prev => [
+        ...prev,
+        {
+          id: notificationId,
+          title: 'WhatsApp Manual Aberto',
+          description: `Mensagem da comanda ${comanda.id} pronta para envio.`,
+          type: 'sms'
+        }
+      ]);
+    }
+
+    setTimeout(() => {
+      setActiveToasts(current => current.filter(t => t.id !== notificationId));
+    }, 6000);
+  };
+
   // --- AUTHENTICATION SYSTEMS (Login para Caixa / Admin) ---
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1365,11 +1436,11 @@ export default function App() {
     // Alert or select
     setSelectedComandaId(generatedId); // highlights on POS too instantly!
 
-    // Trigger register notifications with safe catch
+    // Send comanda access link through WhatsApp dispatch.
     try {
-      triggerNotification(newComanda, 'Abertura de Pedido');
+      dispatchComandaAccessWhatsApp(newComanda);
     } catch (e) {
-      console.error("Error triggering registration notification:", e);
+      console.error("Error dispatching comanda access link:", e);
     }
 
     return generatedId;

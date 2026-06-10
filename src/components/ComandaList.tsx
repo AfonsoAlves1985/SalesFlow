@@ -26,13 +26,13 @@ export default function ComandaList({
   const [selectedType, setSelectedType] = useState<ClientType | 'Todos'>('Todos');
   const [selectedStatus, setSelectedStatus] = useState<PaymentStatus | 'Todos'>('Todos');
   const [selectedMonth, setSelectedMonth] = useState<string | 'Todos'>('Todos');
-  const [selectedUnit, setSelectedUnit] = useState<string>(operatingUnit || 'Todos');
+  const [selectedUnit, setSelectedUnit] = useState<string>('Todos');
 
   useEffect(() => {
-    if (operatingUnit && operatingUnit !== 'Todos') {
-      setSelectedUnit(operatingUnit);
+    if (selectedUnit !== 'Todos' && !unidades.includes(selectedUnit)) {
+      setSelectedUnit('Todos');
     }
-  }, [operatingUnit]);
+  }, [selectedUnit, unidades]);
 
   // Calculates the sum of values of the items in a comanda
   const getComandaTotal = (comanda: Comanda) => {
@@ -57,6 +57,15 @@ export default function ComandaList({
   const totalPendingBalance = activeComandas.reduce((sum, c) => sum + getComandaTotal(c), 0);
   const paidComandasCount = comandas.filter(c => c.status === 'Pago').length;
   const totalPaidBalance = comandas.filter(c => c.status === 'Pago').reduce((sum, c) => sum + getComandaTotal(c), 0);
+  const hasActiveFilters = !!searchTerm || selectedType !== 'Todos' || selectedStatus !== 'Todos' || selectedMonth !== 'Todos' || selectedUnit !== 'Todos';
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedType('Todos');
+    setSelectedStatus('Todos');
+    setSelectedMonth('Todos');
+    setSelectedUnit('Todos');
+  };
 
   const getClientTypeBadge = (type: ClientType) => {
     switch (type) {
@@ -199,8 +208,18 @@ export default function ComandaList({
                  {unidades.map(u => (
                     <option key={u} value={u}>{u}</option>
                  ))}
-               </select>
+                </select>
             </div>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="border border-slate-200 hover:border-[#C5A059] bg-slate-50 hover:bg-[#C5A059]/10 text-slate-700 font-extrabold text-xs px-3 py-2 rounded-xl transition cursor-pointer"
+              >
+                Limpar Filtros
+              </button>
+            )}
 
             {onOpenManageUnits && (
               <button
@@ -241,7 +260,18 @@ export default function ComandaList({
               {filteredComandas.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="text-center py-10 text-slate-400">
-                    Nenhuma comanda encontrada com os filtros selecionados.
+                    {comandas.length > 0 && hasActiveFilters
+                      ? 'Existe comanda cadastrada, mas os filtros atuais estão ocultando o resultado.'
+                      : 'Nenhuma comanda cadastrada ainda.'}
+                    {comandas.length > 0 && hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="ml-3 text-[#C5A059] hover:text-[#B38F4B] font-black underline underline-offset-4"
+                      >
+                        Limpar filtros
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
