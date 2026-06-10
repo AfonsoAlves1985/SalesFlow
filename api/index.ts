@@ -9,6 +9,12 @@ const DB_FILE = isVercel
 
 let sseClients: any[] = [];
 
+setInterval(() => {
+  sseClients = sseClients.filter((c: any) => {
+    try { return c.socket?.writable; } catch { return false; }
+  });
+}, 30000);
+
 // --- Supabase integration ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -264,15 +270,16 @@ app.post('/api/whatsapp/disconnect', (_req: any, res: any) => {
 app.get('/api/events', (req: any, res: any) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-transform, no-cache',
+    'Cache-Control': 'no-transform, no-cache, no-store',
     'Connection': 'keep-alive',
     'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no'
   });
-  res.write(': sse-padding to bypass aggressive proxy buffers\n\n');
+  res.write(': ' + 'x'.repeat(4096) + '\n\n');
+  res.write('retry: 2000\n');
   res.write('data: {"connected":true}\n\n');
   sseClients.push(res);
-  const keepAlive = setInterval(() => { try { res.write(':\n\n'); } catch {} }, 20000);
+  const keepAlive = setInterval(() => { try { res.write(':\n\n'); } catch {} }, 15000);
   req.on('close', () => {
     clearInterval(keepAlive);
     sseClients = sseClients.filter((c: any) => c !== res);
@@ -299,6 +306,9 @@ async function ensureInit() {
 
 export default async function handler(req: any, res: any) {
   try {
+    if (req.url === '/api/events') {
+      return app(req, res);
+    }
     await ensureInit();
     return app(req, res);
   } catch (err: any) {
