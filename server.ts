@@ -5,9 +5,9 @@ import { createServer as createViteServer } from "vite";
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS } from "./src/initialData";
 import { Product, Comanda } from "./src/types";
 
-async function startServer() {
+export async function createApp() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: "15mb" }));
 
@@ -341,9 +341,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.VERCEL !== '1') {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
+
+  return app;
 }
 
-startServer();
+const isVercel = process.env.VERCEL === '1';
+if (!isVercel) {
+  createApp();
+}
+
+export default createApp;

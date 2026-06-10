@@ -1,7 +1,19 @@
 {
   "version": 2,
   "cleanUrls": true,
-  "framework": "vite",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "api/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
   "routes": [
     {
       "src": "/assets/(.*)",
@@ -12,7 +24,7 @@
     },
     {
       "src": "/api/(.*)",
-      "dest": "http://localhost:3000/api/$1"
+      "dest": "api/index.ts"
     },
     {
       "handle": "filesystem"
