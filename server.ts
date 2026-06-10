@@ -16,6 +16,17 @@ export async function createApp() {
     ? path.join("/tmp", "data-store.json")
     : path.join(process.cwd(), "data-store.json");
 
+  const isGeneratedModelComanda = (c: any) => {
+    const name = String(c?.clientName || '').trim();
+    const course = String(c?.courseOrTraining || '').trim();
+    return name === 'Cliente QR Especial'
+      || name.startsWith('Cliente Smartphone ')
+      || course === 'Área do Aluno Elite'
+      || course === 'Treinamento de Auto-Atendimento';
+  };
+
+  const sanitizeComandas = (list: Comanda[]) => list.filter(c => !isGeneratedModelComanda(c));
+
   let db = {
     products: INITIAL_PRODUCTS,
     comandas: INITIAL_COMANDAS,
@@ -31,7 +42,7 @@ export async function createApp() {
       const rawData = fs.readFileSync(DB_FILE, "utf-8");
       const loaded = JSON.parse(rawData);
       if (loaded.products && Array.isArray(loaded.products)) db.products = loaded.products;
-      if (loaded.comandas && Array.isArray(loaded.comandas)) db.comandas = loaded.comandas;
+      if (loaded.comandas && Array.isArray(loaded.comandas)) db.comandas = sanitizeComandas(loaded.comandas);
       if (loaded.notifications && Array.isArray(loaded.notifications)) db.notifications = loaded.notifications;
       if (loaded.categories && Array.isArray(loaded.categories)) db.categories = loaded.categories;
       if (loaded.unidades && Array.isArray(loaded.unidades)) db.unidades = loaded.unidades;
@@ -47,6 +58,7 @@ export async function createApp() {
 
   function saveDb() {
     try {
+      db.comandas = sanitizeComandas(db.comandas);
       fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
     } catch (err) {
       console.error("Error backing up to data-store.json:", err);
@@ -64,7 +76,7 @@ export async function createApp() {
   app.post("/api/state/sync", (req, res) => {
     const { products, comandas, notifications, categories, unidades, whatsStatus, whatsNumber } = req.body;
     if (products && Array.isArray(products)) db.products = products;
-    if (comandas && Array.isArray(comandas)) db.comandas = comandas;
+    if (comandas && Array.isArray(comandas)) db.comandas = sanitizeComandas(comandas);
     if (notifications && Array.isArray(notifications)) db.notifications = notifications;
     if (categories && Array.isArray(categories)) db.categories = categories;
     if (unidades && Array.isArray(unidades)) db.unidades = unidades;
@@ -242,7 +254,7 @@ export async function createApp() {
   app.post("/api/comandas/bulk", (req, res) => {
     const list = req.body as Comanda[];
     if (Array.isArray(list)) {
-      db.comandas = list;
+      db.comandas = sanitizeComandas(list);
       saveDb();
     }
     res.json({ success: true, comandas: db.comandas });

@@ -225,16 +225,28 @@ export default function App() {
     unidadesRef.current = unidades;
   }, [products, comandas, notifications, categories, unidades]);
 
+  const isGeneratedModelComanda = (c: any) => {
+    const name = String(c?.clientName || '').trim();
+    const course = String(c?.courseOrTraining || '').trim();
+    return name === 'Cliente QR Especial'
+      || name.startsWith('Cliente Smartphone ')
+      || course === 'Área do Aluno Elite'
+      || course === 'Treinamento de Auto-Atendimento';
+  };
+
+  const sanitizeComandas = (list: any[]) => list.filter(c => !isGeneratedModelComanda(c));
+
   const applyRemoteState = (data: any) => {
     if (!data) return;
+    const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
 
     if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
       setProducts(data.products);
       localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
     }
-    if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
-      setComandas(data.comandas);
-      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
+    if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
+      setComandas(remoteComandas);
+      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(remoteComandas));
     }
     if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
       setNotifications(data.notifications);
@@ -302,7 +314,8 @@ export default function App() {
       try {
         const parsed = JSON.parse(cachedComandas);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedComandas = parsed;
+          loadedComandas = sanitizeComandas(parsed);
+          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(loadedComandas));
         }
       } catch (e) {
         console.warn("Error parsing cached comandas, resorting to fallback:", e);
@@ -387,10 +400,11 @@ export default function App() {
         }
 
         // Server is empty or does not have comandas, but client has comandas in localStorage
-        if (data.comandas && Array.isArray(data.comandas) && data.comandas.length > 0) {
-          setComandas(data.comandas);
-          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
-          loadedComandas = data.comandas;
+        const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
+        if (serverComandas.length > 0) {
+          setComandas(serverComandas);
+          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
+          loadedComandas = serverComandas;
         } else if (loadedComandas && loadedComandas.length > 0) {
           needsSyncToServer = true;
         }
@@ -430,37 +444,13 @@ export default function App() {
         const comandaParam = urlParams.get('comanda');
 
         if (comandaParam) {
-          // Find if this comanda exists in loadedComandas
           const comandaExists = loadedComandas.find(c => c.id === comandaParam);
-          if (!comandaExists) {
-            // Automatically create the comanda so they don't see any "enter code" or "register" forms!
-            const autoClientName = urlParams.get('name') || "Cliente QR Especial";
-            const autoCourse = urlParams.get('course') || "Área do Aluno Elite";
-            const newAutoComanda: Comanda = {
-              id: comandaParam,
-              clientName: autoClientName,
-              clientType: 'Aluno',
-              courseOrTraining: autoCourse,
-              month: 'Junho',
-              status: 'Pendente',
-              createdAt: new Date().toISOString(),
-              items: [],
-              unit: 'Sede Principal'
-            };
-            const updatedList = [newAutoComanda, ...loadedComandas];
-            setComandas(updatedList);
-            localStorage.setItem('salesflow_tickets_v2', JSON.stringify(updatedList));
-
-            // Sync with Server immediately
-            fetch('/api/comandas', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newAutoComanda)
-            }).catch(() => {});
-          }
-
           setClientActiveComandaId(comandaParam);
-          localStorage.setItem('salesflow_client_active_id_v2', comandaParam);
+          if (comandaExists) {
+            localStorage.setItem('salesflow_client_active_id_v2', comandaParam);
+          } else {
+            localStorage.removeItem('salesflow_client_active_id_v2');
+          }
           setViewMode('client');
           setIsClientOnlyMode(true);
         } else {
@@ -538,13 +528,14 @@ export default function App() {
   };
 
   const saveComandasToStorage = (updatedComandas: Comanda[]) => {
-    setComandas(updatedComandas);
-    localStorage.setItem('salesflow_tickets_v2', JSON.stringify(updatedComandas));
+    const cleanComandas = sanitizeComandas(updatedComandas) as Comanda[];
+    setComandas(cleanComandas);
+    localStorage.setItem('salesflow_tickets_v2', JSON.stringify(cleanComandas));
 
     fetch('/api/comandas/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedComandas)
+      body: JSON.stringify(cleanComandas)
     }).catch(() => {});
   };
 
@@ -577,9 +568,9 @@ export default function App() {
     
     let currentComas = comandas;
     if (updatedComandas) {
-      setComandas(updatedComandas);
-      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(updatedComandas));
-      currentComas = updatedComandas;
+      currentComas = sanitizeComandas(updatedComandas) as Comanda[];
+      setComandas(currentComas);
+      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(currentComas));
     }
 
     fetch('/api/state/sync', {
@@ -1559,7 +1550,6 @@ export default function App() {
             comandas={comandas}
             products={products}
             activeComandaId={clientActiveComandaId}
-            onRegisterComanda={handleRegisterNewComanda}
             onAddProductFromClient={handleAddProductToComanda}
             onSignExistingItem={handleSignExistingComandaItem}
             onDisconnectClient={handleDisconnectClient}
@@ -2715,7 +2705,6 @@ export default function App() {
               comandas={comandas}
               products={products}
               activeComandaId={clientActiveComandaId}
-              onRegisterComanda={handleRegisterNewComanda}
               onAddProductFromClient={handleAddProductToComanda}
               onSignExistingItem={handleSignExistingComandaItem}
               onDisconnectClient={handleDisconnectClient}

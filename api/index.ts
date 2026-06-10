@@ -7,6 +7,24 @@ const DB_FILE = isVercel
   ? path.join('/tmp', 'data-store.json')
   : path.join(process.cwd(), 'data-store.json');
 
+function isGeneratedModelComanda(c: any) {
+  const name = String(c?.clientName || '').trim();
+  const course = String(c?.courseOrTraining || '').trim();
+  return name === 'Cliente QR Especial'
+    || name.startsWith('Cliente Smartphone ')
+    || course === 'Área do Aluno Elite'
+    || course === 'Treinamento de Auto-Atendimento';
+}
+
+function sanitizeState(state: any) {
+  return {
+    ...state,
+    comandas: Array.isArray(state?.comandas)
+      ? state.comandas.filter((c: any) => !isGeneratedModelComanda(c))
+      : []
+  };
+}
+
 // --- Supabase integration ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -32,7 +50,21 @@ async function pullFromSupabase(defaults: any) {
       supabase.from('comandas').select('*').order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').order('timestamp', { ascending: false }).limit(50),
     ]);
-    return {
+    const mappedComandas = (coms.data || []).map((c: any) => ({
+      id: c.id, clientName: c.client_name, clientType: c.client_type,
+      clientEmail: c.client_email, clientPhone: c.client_phone,
+      courseOrTraining: c.course_or_training, month: c.month, status: c.status,
+      createdAt: c.created_at, closedAt: c.closed_at, unit: c.units,
+      closureReminderActive: !!c.closure_reminder_active, items: c.items || []
+    }));
+    const generatedIds = mappedComandas
+      .filter(isGeneratedModelComanda)
+      .map((c: any) => c.id)
+      .filter(Boolean);
+    if (generatedIds.length > 0) {
+      await supabase.from('comandas').delete().in('id', generatedIds);
+    }
+    return sanitizeState({
       ...defaults,
       categories: (cats.data || []).map((c: any) => c.name),
       unidades: (units.data || []).map((u: any) => u.name),
@@ -40,19 +72,13 @@ async function pullFromSupabase(defaults: any) {
         id: p.id, code: p.code, name: p.name,
         price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category
       })),
-      comandas: (coms.data || []).map((c: any) => ({
-        id: c.id, clientName: c.client_name, clientType: c.client_type,
-        clientEmail: c.client_email, clientPhone: c.client_phone,
-        courseOrTraining: c.course_or_training, month: c.month, status: c.status,
-        createdAt: c.created_at, closedAt: c.closed_at, unit: c.units,
-        closureReminderActive: !!c.closure_reminder_active, items: c.items || []
-      })),
+      comandas: mappedComandas,
       notifications: (notifs.data || []).map((n: any) => ({
         id: n.id, timestamp: n.timestamp, recipient: n.recipient,
         course: n.course, contact: n.contact, type: n.type,
         message: n.message, status: n.status, sender: n.sender
       })),
-    };
+    });
   } catch (e: any) {
     console.error('[SalesFlow] Supabase pull failed:', e?.message);
     return null;
@@ -62,6 +88,7 @@ async function pullFromSupabase(defaults: any) {
 async function syncToSupabase() {
   if (!supabase || !db) return;
   try {
+    db = sanitizeState(db);
     const mirrorTable = async (table: string, key: string, rows: any[]) => {
       const { data: existing, error: selectError } = await supabase.from(table).select(key);
       if (selectError) throw selectError;
@@ -127,14 +154,15 @@ function loadDb() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-      if (data.products) return { ...defaults, ...data };
+      if (data.products) return sanitizeState({ ...defaults, ...data });
     }
   } catch {}
-  return defaults;
+  return sanitizeState(defaults);
 }
 
 function saveDb() {
   try {
+    db = sanitizeState(db);
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
   } catch {}
 }

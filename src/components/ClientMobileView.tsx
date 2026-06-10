@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Comanda, Product, ClientType, OrderedItem } from '../types';
+import { Comanda, Product, OrderedItem } from '../types';
 import { 
   QrCode, 
   ShoppingBag, 
@@ -16,14 +16,12 @@ import {
   Bell,
   Check
 } from 'lucide-react';
-import { MONTHS } from '../initialData';
 import SignaturePad from './SignaturePad';
 
 interface ClientMobileViewProps {
   comandas: Comanda[];
   products: Product[];
   activeComandaId: string | null;
-  onRegisterComanda: (comandaData: { name: string; type: ClientType; course: string; month: string; email?: string; phone?: string }) => string;
   onAddProductFromClient: (comandaId: string, productId: string, quantity: number, signature: string) => void;
   onSignExistingItem: (comandaId: string, itemId: string, signature: string) => void;
   onDisconnectClient: () => void;
@@ -33,7 +31,6 @@ export default function ClientMobileView({
   comandas,
   products,
   activeComandaId,
-  onRegisterComanda,
   onAddProductFromClient,
   onSignExistingItem,
   onDisconnectClient
@@ -44,11 +41,6 @@ export default function ClientMobileView({
 
   // States for registration form
   const [registerName, setRegisterName] = useState('');
-  const [registerType, setRegisterType] = useState<ClientType>('Aluno');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPhone, setRegisterPhone] = useState('');
-  const [registerCourse, setRegisterCourse] = useState('');
-  const [registerMonth, setRegisterMonth] = useState('Junho');
 
   // Ordering mode states
   const [isOrdering, setIsOrdering] = useState(false);
@@ -187,27 +179,6 @@ export default function ClientMobileView({
     return currentComanda.items.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!registerName.trim()) {
-      alert('Por favor, informe seu nome para abir a comanda.');
-      return;
-    }
-    if (!registerCourse.trim()) {
-      alert('Por favor, informe o curso ou treinamento.');
-      return;
-    }
-
-    onRegisterComanda({
-      name: registerName,
-      type: registerType,
-      course: registerCourse,
-      month: registerMonth,
-      email: registerEmail,
-      phone: registerPhone
-    });
-  };
-
   const handleOrderInitiate = () => {
     if (!selectedProductId) return;
     const prod = products.find(p => p.id === selectedProductId);
@@ -240,9 +211,6 @@ export default function ClientMobileView({
     }
     setShowSignaturePad(false);
   };
-
-  // Helper lists for client classifications
-  const clientTypes: ClientType[] = ['Aluno', 'Colaborador', 'Diretoria'];
 
   return (
     <div className="mx-auto w-full max-w-[390px] min-h-[620px] bg-slate-50 rounded-2xl shadow-lg border border-slate-200 relative flex flex-col overflow-hidden animate-fadeIn select-none">
@@ -466,36 +434,12 @@ export default function ClientMobileView({
                 </div>
                 <h2 className="text-lg font-black text-slate-900">Área do Cliente</h2>
                 <p className="text-xs text-slate-400 mt-1">Acesso ao Auto-Atendimento</p>
-              </div>              {/* Enter existing comanda form */}
+              </div>
+
+              {/* Enter existing comanda form */}
               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs space-y-4">
                 <div className="text-xs text-slate-500 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-100 mb-2">
-                  ℹ️ <strong className="text-slate-700">Acesso Inteligente:</strong> Você pode iniciar uma comanda digital instantânea agora mesmo para simular o auto-atendimento no celular, ou vincular uma comanda existente informando o código abaixo.
-                </div>
-
-                {/* Instant Auto-creation Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rnd = Math.floor(1000 + Math.random() * 9000);
-                    onRegisterComanda({
-                      name: `Cliente Smartphone ${rnd}`,
-                      type: 'Aluno',
-                      course: 'Treinamento de Auto-Atendimento',
-                      month: 'Junho',
-                      email: 'smartphone@exemplo.com',
-                      phone: '(11) 99999-9999'
-                    });
-                  }}
-                  className="w-full py-3.5 bg-[#C5A059] hover:bg-[#B38F4B] text-[#09090B] text-xs font-black rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer font-bold uppercase tracking-wider font-mono animate-pulse"
-                >
-                  <ShoppingBag className="w-4 h-4" />
-                  ABRIR COMANDA AUTOMATICAMENTE
-                </button>
-
-                <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-slate-200"></div>
-                  <span className="flex-shrink mx-3 text-[9px] text-slate-400 font-bold uppercase tracking-wider font-mono">OU VINCULAR POR CÓDIGO</span>
-                  <div className="flex-grow border-t border-slate-200"></div>
+                  <strong className="text-slate-700">Acesso por comanda existente:</strong> informe o código recebido no caixa ou escaneie o QR Code gerado para a sua comanda.
                 </div>
 
                 <div>
