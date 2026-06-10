@@ -45,62 +45,15 @@ export async function createApp() {
     console.error("Error reading/writing store database file, keeping memory state:", err);
   }
 
-  // --- REAL-TIME SERVER-SENT EVENTS (SSE) MANAGEMENT ---
-  let sseClients: any[] = [];
-
-  function broadcast(event: string, data: any) {
-    const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    sseClients.forEach((client) => {
-      try {
-        client.write(message);
-      } catch (err) {
-        // failed writing gets cleaned up or ignored
-      }
-    });
-  }
-
   function saveDb() {
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-      // Seamlessly broadcast updated state in real-time to all connected terminals
-      broadcast("state_updated", db);
     } catch (err) {
       console.error("Error backing up to data-store.json:", err);
     }
   }
 
   // --- API ENDPOINTS ---
-
-  // SSE Subscription Endpoint
-  app.get("/api/events", (req, res) => {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-transform, no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
-      "X-Accel-Buffering": "no"
-    });
-    
-    // Send immediate padding to bypass any content size-based proxy buffers, followed by the connected event
-    res.write(": sse-padding to bypass aggressive proxy buffers\n\n");
-    res.write("data: {\"connected\":true}\n\n");
-
-    // Periodic Keep-Alive to maintain persistent connection through reverse proxy (prevent timeouts)
-    const keepAliveInterval = setInterval(() => {
-      try {
-        res.write(":\n\n"); // Silently send a standard SSE comment ping
-      } catch (err) {
-        // Closed or failed writes will be caught and cleaned up by 'close'
-      }
-    }, 20000);
-
-    sseClients.push(res);
-
-    req.on("close", () => {
-      clearInterval(keepAliveInterval);
-      sseClients = sseClients.filter((client) => client !== res);
-    });
-  });
 
   // Get full state
   app.get("/api/state", (req, res) => {

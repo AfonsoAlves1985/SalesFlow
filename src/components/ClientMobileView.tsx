@@ -27,7 +27,6 @@ interface ClientMobileViewProps {
   onAddProductFromClient: (comandaId: string, productId: string, quantity: number, signature: string) => void;
   onSignExistingItem: (comandaId: string, itemId: string, signature: string) => void;
   onDisconnectClient: () => void;
-  realTimeStatus?: 'connected' | 'connecting' | 'failed';
 }
 
 export default function ClientMobileView({
@@ -37,8 +36,7 @@ export default function ClientMobileView({
   onRegisterComanda,
   onAddProductFromClient,
   onSignExistingItem,
-  onDisconnectClient,
-  realTimeStatus = 'connected'
+  onDisconnectClient
 }: ClientMobileViewProps) {
   
   // Current active comanda lookup
@@ -292,7 +290,7 @@ export default function ClientMobileView({
           </div>
         )}
         
-        {/* Real-Time Closure Warning Overlay triggered via Cashier SSE broadcast */}
+        {/* Closure warning overlay triggered by cashier sync */}
         {currentComanda && currentComanda.closureReminderActive && !isReminderDismissed && (
           <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn text-left">
             <div className="bg-slate-900 border border-amber-500/25 rounded-3xl p-5 w-full max-w-[340px] shadow-2xl relative text-left text-white space-y-4 animate-slideUp">
@@ -642,19 +640,7 @@ export default function ClientMobileView({
             {/* Real-time comanda screen view */}
             <div>
               {/* Header card with switch action */}
-              <div className="flex justify-between items-center mb-4">
-                <span className={`text-[10px] font-black flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                  realTimeStatus === 'connected' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' :
-                  realTimeStatus === 'connecting' ? 'text-amber-600 bg-amber-50 border-amber-100 animate-pulse' :
-                  'text-rose-500 bg-rose-50 border-rose-100'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    realTimeStatus === 'connected' ? 'bg-emerald-500' :
-                    realTimeStatus === 'connecting' ? 'bg-amber-400' : 'bg-rose-500'
-                  } ${realTimeStatus !== 'failed' ? 'animate-pulse' : ''}`} />
-                  {realTimeStatus === 'connected' ? 'Tempo Real Ativo' :
-                   realTimeStatus === 'connecting' ? 'Sincronizando...' : 'Polling Fallback'}
-                </span>
+              <div className="flex justify-end items-center mb-4">
                 <button
                   onClick={onDisconnectClient}
                   className="text-[10px] font-extrabold text-black bg-[#C5A059] hover:bg-[#B38F4B] border border-[#B38F4B]/30 px-3 py-1.5 rounded-lg transition duration-200 cursor-pointer"

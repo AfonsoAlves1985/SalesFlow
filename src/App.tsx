@@ -169,8 +169,6 @@ export default function App() {
   // Track active invite processing
   const [activeInviteCode, setActiveInviteCode] = useState<string | null>(null);
 
-  // Real-time synchronization state (Option 1 SSE Router)
-  const [realTimeStatus, setRealTimeStatus] = useState<'connected' | 'connecting' | 'failed'>('connecting');
   const [isInitialized, setIsInitialized] = useState(false);
 
   // User Session Management
@@ -226,6 +224,39 @@ export default function App() {
     categoriesRef.current = categories;
     unidadesRef.current = unidades;
   }, [products, comandas, notifications, categories, unidades]);
+
+  const applyRemoteState = (data: any) => {
+    if (!data) return;
+
+    if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
+      setProducts(data.products);
+      localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+    }
+    if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
+      setComandas(data.comandas);
+      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
+    }
+    if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
+      setNotifications(data.notifications);
+      localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+    }
+    if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
+      setCategories(data.categories);
+      localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
+    }
+    if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
+      setUnidades(data.unidades);
+      localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+    }
+    if (data.whatsStatus) {
+      setWhatsConnectionStatus(data.whatsStatus);
+      localStorage.setItem('salesflow_whats_status', data.whatsStatus);
+    }
+    if (data.whatsNumber) {
+      setSystemWhatsNumber(data.whatsNumber);
+      localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
+    }
+  };
 
   // Check Supabase connection when mounting
   useEffect(() => {
@@ -452,218 +483,36 @@ export default function App() {
       });
   }, []);
 
-  // Hybrid Real-Time synchronization hook: Server-Sent Events (SSE) with standard polling recovery
+  // Polling fallback/safety-net. Supabase Realtime is the primary sync channel in production.
   useEffect(() => {
     if (!isInitialized) return;
-    let active = true;
-    let eventSource: EventSource | null = null;
-    let fallbackInterval: NodeJS.Timeout | null = null;
+    const intervalMs = isSupabaseConfigured() ? 10000 : 3000;
 
-    const pollSync = async () => {
+    const interval = setInterval(async () => {
       try {
         const res = await fetch('/api/state');
         if (!res.ok) return;
-        const data = await res.json();
-        if (!active) return;
+        applyRemoteState(await res.json());
+      } catch {}
+    }, intervalMs);
 
-        // Sync Products if changed by another machine
-        if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
-          setProducts(data.products);
-          localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-        }
+    return () => clearInterval(interval);
+  }, [isInitialized]);
 
-        // Sync Comandas if changed by smartphone active consumer
-        if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
-          setComandas(data.comandas);
-          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
-        }
-
-        // Sync notifications/tickets faturados list
-        if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
-          setNotifications(data.notifications);
-          localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-        }
-
-        // Sync categories list
-        if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
-          setCategories(data.categories);
-          localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
-        }
-
-        // Sync unidades list
-        if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
-          setUnidades(data.unidades);
-          localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
-        }
-      } catch (err) {
-        // Tolerates network offline states
-      }
-    };
-
-    const connectSSE = () => {
-      if (!active) return;
-      setRealTimeStatus('connecting');
-
-      let hasOpened = false;
-
-      // If we attempt reconnection, stop the old EventSource
-      if (eventSource) {
-        eventSource.close();
-      }
-
-      // Safety handshake timeout: if proxy/browser keeps SSE request 'Pending' for over 3.5s
-      const handshakeTimeout = setTimeout(() => {
-        if (!active || hasOpened) return;
-        console.warn("⚠️ SSE connection handshake timed out (3.5s). Activating failover polling immediately...");
-        setRealTimeStatus('failed');
-        
-        // Spawn fallback poller to keep data perfectly synced in background
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(pollSync, 3000);
-        }
-      }, 3500);
-
-      try {
-        eventSource = new EventSource('/api/events');
-
-        eventSource.onopen = () => {
-          if (!active) return;
-          hasOpened = true;
-          clearTimeout(handshakeTimeout);
-          console.log("🟢 Real-Time SSE channel opened successfully.");
-          setRealTimeStatus('connected');
-          
-          // Once SSE is active, we don't need aggressive interval polling.
-          if (fallbackInterval) {
-            clearInterval(fallbackInterval);
-            fallbackInterval = null;
-          }
-        };
-
-        eventSource.onerror = (err) => {
-          if (!active) return;
-          hasOpened = true;
-          clearTimeout(handshakeTimeout);
-          console.warn("⚠️ SSE Real-time offline, reverting to failover polling loop:", err);
-          setRealTimeStatus('failed');
-          eventSource?.close();
-
-          // Spawn fall-back interval poller
-          if (!fallbackInterval) {
-            fallbackInterval = setInterval(pollSync, 3000);
-          }
-
-          // Schedule an back-off reconnection try in 8 seconds to prevent spam
-          setTimeout(() => {
-            if (active) connectSSE();
-          }, 8000);
-        };
-
-        // Custom state_updated broadcast message event listener
-        eventSource.addEventListener('state_updated', (e: any) => {
-          if (!active) return;
-          try {
-            const data = JSON.parse(e.data);
-            
-            // Sync Products if changed by another machine
-            if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
-              setProducts(data.products);
-              localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-            }
-
-            // Sync Comandas if changed by smartphone active consumer
-            if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
-              setComandas(data.comandas);
-              localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
-            }
-
-            // Sync notifications
-            if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
-              setNotifications(data.notifications);
-              localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-            }
-
-            // Sync categories list
-            if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
-              setCategories(data.categories);
-              localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
-            }
-
-            // Sync WhatsApp Web configurations in real time
-            if (data.whatsStatus) {
-              setWhatsConnectionStatus(data.whatsStatus);
-              localStorage.setItem('salesflow_whats_status', data.whatsStatus);
-            }
-            if (data.whatsNumber) {
-              setSystemWhatsNumber(data.whatsNumber);
-              localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
-            }
-
-            // Sync unidades
-            if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
-              setUnidades(data.unidades);
-              localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
-            }
-          } catch (err) {
-            console.error("Failed to parse SSE broadcast payload:", err);
-          }
-        });
-
-      } catch (err) {
-        if (!active) return;
-        setRealTimeStatus('failed');
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(pollSync, 2000);
-        }
-      }
-    };
-
-    // Establish link on load
-    connectSSE();
-
-    return () => {
-      active = false;
-      if (eventSource) eventSource.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
-  }, []);
-
-  // Supabase Realtime subscription for cross-instance sync (solves Vercel serverless SSE limitation)
+  // Supabase Realtime subscription for cross-instance sync
   useEffect(() => {
     if (!isInitialized) return;
     if (!isSupabaseConfigured()) return;
 
     let debounce: NodeJS.Timeout | null = null;
 
-    const sub = subscribeToSupabaseRealtime((payload) => {
+    const sub = subscribeToSupabaseRealtime(() => {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(async () => {
         try {
           const res = await fetch('/api/state');
           if (!res.ok) return;
-          const data = await res.json();
-          if (!data) return;
-
-          if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
-            setProducts(data.products);
-            localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-          }
-          if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
-            setComandas(data.comandas);
-            localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
-          }
-          if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
-            setNotifications(data.notifications);
-            localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-          }
-          if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
-            setCategories(data.categories);
-            localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
-          }
-          if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
-            setUnidades(data.unidades);
-            localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
-          }
+          applyRemoteState(await res.json());
         } catch (err) {
           console.warn('[Supabase Realtime] refresh failed:', err);
         }
@@ -1714,7 +1563,6 @@ export default function App() {
             onAddProductFromClient={handleAddProductToComanda}
             onSignExistingItem={handleSignExistingComandaItem}
             onDisconnectClient={handleDisconnectClient}
-            realTimeStatus={realTimeStatus}
           />
         </div>
       </div>
@@ -1757,21 +1605,6 @@ export default function App() {
 
         {/* Presentation Controls and Theme Switcher (Atrativos e Modernos presets) */}
         <div className="flex flex-wrap items-center gap-3.5">
-          {/* Real-time Indicator Badge */}
-          <div className={`flex items-center gap-2 bg-slate-950/60 px-3 py-1.5 rounded-xl border ${
-            realTimeStatus === 'connected' ? 'border-emerald-500/20' :
-            realTimeStatus === 'connecting' ? 'border-amber-500/20' : 'border-rose-500/20'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${
-              realTimeStatus === 'connected' ? 'bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(52,211,153,0.5)]' :
-              realTimeStatus === 'connecting' ? 'bg-amber-400 animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.5)]' :
-              'bg-rose-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'
-            }`} />
-            <span className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-300">
-              {realTimeStatus === 'connected' ? 'SSE Tempo Real Ativo ⚡' :
-               realTimeStatus === 'connecting' ? 'SSE Sincronizando...' : 'Segurança (Polling)'}
-            </span>
-          </div>
 
           {/* Template presets switcher */}
           <div className="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/50">
@@ -2886,7 +2719,6 @@ export default function App() {
               onAddProductFromClient={handleAddProductToComanda}
               onSignExistingItem={handleSignExistingComandaItem}
               onDisconnectClient={handleDisconnectClient}
-              realTimeStatus={realTimeStatus}
             />
           </div>
         )}

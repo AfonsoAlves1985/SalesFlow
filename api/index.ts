@@ -7,14 +7,6 @@ const DB_FILE = isVercel
   ? path.join('/tmp', 'data-store.json')
   : path.join(process.cwd(), 'data-store.json');
 
-let sseClients: any[] = [];
-
-setInterval(() => {
-  sseClients = sseClients.filter((c: any) => {
-    try { return c.socket?.writable; } catch { return false; }
-  });
-}, 30000);
-
 // --- Supabase integration ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
@@ -70,35 +62,51 @@ async function pullFromSupabase(defaults: any) {
 async function syncToSupabase() {
   if (!supabase || !db) return;
   try {
+    const mirrorTable = async (table: string, key: string, rows: any[]) => {
+      const { data: existing, error: selectError } = await supabase.from(table).select(key);
+      if (selectError) throw selectError;
+
+      const currentIds = new Set(rows.map((row: any) => row[key]).filter(Boolean));
+      const staleIds = (existing || [])
+        .map((row: any) => row[key])
+        .filter((id: string) => id && !currentIds.has(id));
+
+      if (staleIds.length > 0) {
+        const { error: deleteError } = await supabase.from(table).delete().in(key, staleIds);
+        if (deleteError) throw deleteError;
+      }
+
+      if (rows.length > 0) {
+        const { error: upsertError } = await supabase.from(table).upsert(rows, { onConflict: key });
+        if (upsertError) throw upsertError;
+      }
+    };
+
+    const categoryRows = db.categories.map((name: string) => ({ name }));
+    const unidadeRows = db.unidades.map((name: string) => ({ name }));
+    const productRows = db.products.map((p: any) => ({
+      id: p.id, code: p.code, name: p.name,
+      price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category
+    }));
+    const comandaRows = db.comandas.map((c: any) => ({
+      id: c.id, client_name: c.clientName, client_type: c.clientType,
+      client_email: c.clientEmail || null, client_phone: c.clientPhone || null,
+      course_or_training: c.courseOrTraining, month: c.month, status: c.status,
+      created_at: c.createdAt, closed_at: c.closedAt || null, units: c.unit || null,
+      closure_reminder_active: !!c.closureReminderActive, items: c.items || []
+    }));
+    const notificationRows = db.notifications.map((n: any) => ({
+      id: n.id, timestamp: n.timestamp, recipient: n.recipient,
+      course: n.course, contact: n.contact, type: n.type,
+      message: n.message, status: n.status, sender: n.sender || null
+    }));
+
     await Promise.all([
-      supabase.from('categories').upsert(
-        db.categories.map((n: string) => ({ name: n })), { onConflict: 'name' }
-      ),
-      supabase.from('unidades').upsert(
-        db.unidades.map((n: string) => ({ name: n })), { onConflict: 'name' }
-      ),
-      supabase.from('products').upsert(
-        db.products.map((p: any) => ({
-          id: p.id, code: p.code, name: p.name,
-          price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category
-        }))
-      ),
-      supabase.from('comandas').upsert(
-        db.comandas.map((c: any) => ({
-          id: c.id, client_name: c.clientName, client_type: c.clientType,
-          client_email: c.clientEmail || null, client_phone: c.clientPhone || null,
-          course_or_training: c.courseOrTraining, month: c.month, status: c.status,
-          created_at: c.createdAt, closed_at: c.closedAt || null, units: c.unit || null,
-          closure_reminder_active: !!c.closureReminderActive, items: c.items || []
-        }))
-      ),
-      supabase.from('notifications').upsert(
-        db.notifications.map((n: any) => ({
-          id: n.id, timestamp: n.timestamp, recipient: n.recipient,
-          course: n.course, contact: n.contact, type: n.type,
-          message: n.message, status: n.status, sender: n.sender || null
-        }))
-      ),
+      mirrorTable('categories', 'name', categoryRows),
+      mirrorTable('unidades', 'name', unidadeRows),
+      mirrorTable('products', 'id', productRows),
+      mirrorTable('comandas', 'id', comandaRows),
+      mirrorTable('notifications', 'id', notificationRows),
     ]);
   } catch (e: any) {
     console.error('[SalesFlow] Supabase sync failed:', e?.message);
@@ -131,22 +139,23 @@ function saveDb() {
   } catch {}
 }
 
-function broadcast(event: string, data: any) {
-  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  sseClients.forEach((c: any) => { try { c.write(msg); } catch {} });
-}
-
 // --- Express app setup ---
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 
-app.get('/api/state', (_req: any, res: any) => res.json(db));
+app.get('/api/state', async (_req: any, res: any) => {
+  const pulled = await pullFromSupabase(db);
+  if (pulled) {
+    db = pulled;
+    saveDb();
+  }
+  res.json(db);
+});
 
 app.post('/api/state/sync', (req: any, res: any) => {
   Object.assign(db, req.body);
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, ...db });
 });
 
@@ -157,7 +166,6 @@ app.post('/api/products', (req: any, res: any) => {
   if (i >= 0) db.products[i] = p; else db.products.push(p);
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, products: db.products });
 });
 
@@ -165,7 +173,6 @@ app.delete('/api/products/:id', (req: any, res: any) => {
   db.products = db.products.filter((p: any) => p.id !== req.params.id);
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, products: db.products });
 });
 
@@ -173,7 +180,6 @@ app.post('/api/products/bulk', (req: any, res: any) => {
   if (Array.isArray(req.body)) db.products = req.body;
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, products: db.products });
 });
 
@@ -184,7 +190,6 @@ app.post('/api/comandas', (req: any, res: any) => {
   if (i >= 0) db.comandas[i] = c; else db.comandas.unshift(c);
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, comandas: db.comandas });
 });
 
@@ -192,7 +197,6 @@ app.delete('/api/comandas/:id', (req: any, res: any) => {
   db.comandas = db.comandas.filter((c: any) => c.id !== req.params.id);
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, comandas: db.comandas });
 });
 
@@ -200,7 +204,6 @@ app.post('/api/comandas/bulk', (req: any, res: any) => {
   if (Array.isArray(req.body)) db.comandas = req.body;
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, comandas: db.comandas });
 });
 
@@ -211,7 +214,6 @@ app.post('/api/notifications', (req: any, res: any) => {
   }
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, notifications: db.notifications });
 });
 
@@ -221,7 +223,6 @@ app.post('/api/reset', (_req: any, res: any) => {
   db.notifications = [];
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, ...db });
 });
 
@@ -240,12 +241,10 @@ app.post('/api/whatsapp/connect', (req: any, res: any) => {
   }
   db.whatsStatus = 'connecting';
   saveDb();
-  broadcast('state_updated', db);
   setTimeout(() => {
     if (db.whatsStatus === 'connecting') {
       db.whatsStatus = 'connected';
       saveDb();
-      broadcast('state_updated', db);
     }
   }, 4500);
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
@@ -255,7 +254,6 @@ app.post('/api/whatsapp/force-connect', (_req: any, res: any) => {
   db.whatsStatus = 'connected';
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
 });
 
@@ -263,27 +261,7 @@ app.post('/api/whatsapp/disconnect', (_req: any, res: any) => {
   db.whatsStatus = 'disconnected';
   saveDb();
   syncToSupabase();
-  broadcast('state_updated', db);
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
-});
-
-app.get('/api/events', (req: any, res: any) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-transform, no-cache, no-store',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
-  });
-  res.write(': ' + 'x'.repeat(4096) + '\n\n');
-  res.write('retry: 2000\n');
-  res.write('data: {"connected":true}\n\n');
-  sseClients.push(res);
-  const keepAlive = setInterval(() => { try { res.write(':\n\n'); } catch {} }, 15000);
-  req.on('close', () => {
-    clearInterval(keepAlive);
-    sseClients = sseClients.filter((c: any) => c !== res);
-  });
 });
 
 // --- Handler ---
@@ -306,9 +284,6 @@ async function ensureInit() {
 
 export default async function handler(req: any, res: any) {
   try {
-    if (req.url === '/api/events') {
-      return app(req, res);
-    }
     await ensureInit();
     return app(req, res);
   } catch (err: any) {
