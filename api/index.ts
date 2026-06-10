@@ -264,11 +264,12 @@ app.post('/api/whatsapp/disconnect', (_req: any, res: any) => {
 app.get('/api/events', (req: any, res: any) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-transform, no-cache',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no'
   });
-  res.write(': sse-padding\n\n');
+  res.write(': sse-padding to bypass aggressive proxy buffers\n\n');
   res.write('data: {"connected":true}\n\n');
   sseClients.push(res);
   const keepAlive = setInterval(() => { try { res.write(':\n\n'); } catch {} }, 20000);
