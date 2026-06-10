@@ -51,7 +51,7 @@ import InviteActivation from './components/InviteActivation';
 import UnitManagementModal from './components/UnitManagementModal';
 import WhatsAppAuthSandbox from './components/WhatsAppAuthSandbox';
 import { testSupabaseConnection } from './lib/supabase';
-import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase } from './lib/supabaseSync';
+import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase, subscribeToSupabaseRealtime } from './lib/supabaseSync';
 
 export default function App() {
   // Brand Logo selection state
@@ -489,6 +489,12 @@ export default function App() {
           setCategories(data.categories);
           localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
         }
+
+        // Sync unidades list
+        if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
+          setUnidades(data.unidades);
+          localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+        }
       } catch (err) {
         // Tolerates network offline states
       }
@@ -592,6 +598,12 @@ export default function App() {
               setSystemWhatsNumber(data.whatsNumber);
               localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
             }
+
+            // Sync unidades
+            if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
+              setUnidades(data.unidades);
+              localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+            }
           } catch (err) {
             console.error("Failed to parse SSE broadcast payload:", err);
           }
@@ -615,6 +627,54 @@ export default function App() {
       if (fallbackInterval) clearInterval(fallbackInterval);
     };
   }, []);
+
+  // Supabase Realtime subscription for cross-instance sync (solves Vercel serverless SSE limitation)
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (!isSupabaseConfigured()) return;
+
+    let debounce: NodeJS.Timeout | null = null;
+
+    const sub = subscribeToSupabaseRealtime((payload) => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        try {
+          const res = await fetch('/api/state');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (!data) return;
+
+          if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
+            setProducts(data.products);
+            localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+          }
+          if (data.comandas && JSON.stringify(data.comandas) !== JSON.stringify(comandasRef.current)) {
+            setComandas(data.comandas);
+            localStorage.setItem('salesflow_tickets_v2', JSON.stringify(data.comandas));
+          }
+          if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
+            setNotifications(data.notifications);
+            localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+          }
+          if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
+            setCategories(data.categories);
+            localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
+          }
+          if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
+            setUnidades(data.unidades);
+            localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+          }
+        } catch (err) {
+          console.warn('[Supabase Realtime] refresh failed:', err);
+        }
+      }, 400);
+    });
+
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      if (sub) sub.unsubscribe();
+    };
+  }, [isInitialized]);
 
   // Sync back into localStorage and server on state updates
   const saveProductsToStorage = (updatedProducts: Product[]) => {
