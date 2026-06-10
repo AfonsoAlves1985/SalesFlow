@@ -104,3 +104,40 @@ insert into public.unidades (name) values
 ('Filial Norte'), 
 ('Filial Sul')
 on conflict (name) do nothing;
+
+-- 6. Tabela de Usuários do Sistema
+create table if not exists public.system_users (
+    id text primary key,
+    username text not null unique,
+    name text not null,
+    email text not null,
+    role text not null check (role in ('admin', 'cashier')),
+    status text not null default 'invited'::text check (status in ('active', 'invited')),
+    password text,
+    invitation_code text,
+    needs_password_change boolean default false,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.system_users enable row level security;
+create policy "Acesso público completo a usuarios do sistema" on public.system_users for all using (true) with check (true);
+
+-- 7. Tabela de Turnos de Caixa
+create table if not exists public.cashier_shifts (
+    id text primary key,
+    opened_at timestamp with time zone not null,
+    opened_by text not null,
+    closed_at timestamp with time zone,
+    closed_by text,
+    initial_balance numeric(10,2) not null default 0.00,
+    final_balance numeric(10,2),
+    actual_cash_in_hand numeric(10,2),
+    notes text,
+    is_active boolean default true
+);
+
+create index if not exists cashier_shifts_opened_at_idx on public.cashier_shifts (opened_at desc);
+create index if not exists cashier_shifts_is_active_idx on public.cashier_shifts (is_active);
+
+alter table public.cashier_shifts enable row level security;
+create policy "Acesso público completo a turnos de caixa" on public.cashier_shifts for all using (true) with check (true);
