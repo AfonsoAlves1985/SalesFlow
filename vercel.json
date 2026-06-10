@@ -3,11 +3,6 @@
   "cleanUrls": true,
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs24.x"
-    }
-  },
   "routes": [
     {
       "src": "/assets/(.*)",
@@ -15,6 +10,10 @@
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"
       }
+    },
+    {
+      "src": "/api/test",
+      "dest": "api/test.ts"
     },
     {
       "src": "/api/(.*)",
