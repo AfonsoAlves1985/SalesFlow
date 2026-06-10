@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS } from "./src/initialData";
 import { Product, Comanda } from "./src/types";
 
@@ -318,6 +317,7 @@ export async function createApp() {
 
   // --- VITE MIDDLEWARE OR STATIC SERVER ---
   if (process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "custom",
