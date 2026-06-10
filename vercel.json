@@ -1,8 +1,6 @@
 {
   "version": 2,
   "cleanUrls": true,
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
   "routes": [
     {
       "src": "/assets/(.*)",
@@ -10,10 +8,6 @@
       "headers": {
         "cache-control": "public, max-age=31536000, immutable"
       }
-    },
-    {
-      "src": "/api/test",
-      "dest": "api/test.ts"
     },
     {
       "src": "/api/(.*)",
