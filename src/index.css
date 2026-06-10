@@ -1,0 +1,255 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer utilities {
+  .animate-fadeIn {
+    animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  
+  .animate-slideLeft {
+    animation: slideLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Styled scrollbars for high fidelity visual feedback */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ==========================================================================
+   SOPHISTICATED DARK - GOLD THEME OVERRIDES
+   ========================================================================== */
+
+/* Page Background & Global Font Styling */
+.theme-gold-dark {
+  background-color: #09090B !important;
+  color: #D4D4D8 !important;
+}
+
+/* Layout container panels & Custom Cards */
+.theme-gold-dark .bg-white,
+.theme-gold-dark .bg-slate-50\/50,
+.theme-gold-dark .bg-slate-50 {
+  background-color: #121214 !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Sub-panels, secondary containers, and lists */
+.theme-gold-dark .bg-slate-100,
+.theme-gold-dark .bg-[#F2F4F3],
+.theme-gold-dark .bg-[#0F172A],
+.theme-gold-dark .bg-slate-50\/20 {
+  background-color: #0C0C0E !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Form controls, inputs, search fields and select option items */
+.theme-gold-dark input,
+.theme-gold-dark select,
+.theme-gold-dark textarea,
+.theme-gold-dark .bg-slate-50 {
+  background-color: #18181B !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+}
+
+.theme-gold-dark input::placeholder {
+  color: #71717A !important;
+}
+
+.theme-gold-dark select option {
+  background-color: #121214 !important;
+  color: #FFFFFF !important;
+}
+
+/* Text primary definitions */
+.theme-gold-dark .text-slate-900,
+.theme-gold-dark .text-slate-800,
+.theme-gold-dark .text-slate-950,
+.theme-gold-dark h1,
+.theme-gold-dark h2,
+.theme-gold-dark h3,
+.theme-gold-dark th {
+  color: #FFFFFF !important;
+}
+
+/* Text secondary/muted definitions */
+.theme-gold-dark .text-slate-700,
+.theme-gold-dark .text-slate-600 {
+  color: #E4E4E7 !important;
+}
+
+.theme-gold-dark .text-slate-500,
+.theme-gold-dark .text-slate-400 {
+  color: #A1A1AA !important;
+}
+
+/* Borders and List Row Dividers */
+.theme-gold-dark .border-slate-100,
+.theme-gold-dark .border-slate-200,
+.theme-gold-dark .border-slate-50,
+.theme-gold-dark .border-indigo-100,
+.theme-gold-dark .divide-slate-50,
+.theme-gold-dark .divide-slate-100 {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Interactive item lists and table hover effects */
+.theme-gold-dark tr:hover {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.theme-gold-dark .hover\:bg-indigo-50:hover,
+.theme-gold-dark .bg-indigo-50\/50 {
+  background-color: rgba(197, 160, 89, 0.06) !important;
+  border-color: rgba(197, 160, 89, 0.15) !important;
+}
+
+.theme-gold-dark .bg-indigo-50 {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+}
+
+/* Tab selector switch bars */
+.theme-gold-dark .bg-white\/60 {
+  background-color: rgba(24, 24, 27, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.theme-gold-dark .bg-slate-900 {
+  background-color: #C5A059 !important;
+  color: #09090B !important;
+}
+
+.theme-gold-dark .text-slate-500.hover\:text-slate-800:hover {
+  color: #FFFFFF !important;
+}
+
+/* Primary Theme Indigo/Ink Swapping into Luxury Gold Elements */
+.theme-gold-dark .text-indigo-600,
+.theme-gold-dark .text-indigo-500,
+.theme-gold-dark .text-indigo-800,
+.theme-gold-dark .text-indigo-900,
+.theme-gold-dark .text-[#4F46E5] {
+  color: #C5A059 !important;
+}
+
+.theme-gold-dark .bg-indigo-600,
+.theme-gold-dark .bg-indigo-500,
+.theme-gold-dark .bg-indigo-700,
+.theme-gold-dark button.bg-slate-900:not(.text-slate-500) {
+  background-color: #C5A059 !important;
+  color: #09090B !important;
+}
+
+.theme-gold-dark .bg-indigo-600:hover,
+.theme-gold-dark .bg-indigo-500:hover,
+.theme-gold-dark .bg-indigo-700:hover,
+.theme-gold-dark button.bg-slate-900:hover {
+  background-color: #B38F46 !important;
+  color: #09090B !important;
+}
+
+.theme-gold-dark .bg-indigo-50.text-indigo-600 {
+  background-color: rgba(197, 160, 89, 0.1) !important;
+  color: #C5A059 !important;
+}
+
+.theme-gold-dark .border-indigo-500,
+.theme-gold-dark .focus\:border-indigo-500:focus,
+.theme-gold-dark .focus\:ring-indigo-500\/20:focus {
+  border-color: rgba(197, 160, 89, 0.4) !important;
+  outline-color: rgba(197, 160, 89, 0.2) !important;
+}
+
+/* Interactive Badge Tag Refinements */
+.theme-gold-dark .bg-\[\#E0F2FE\],
+.theme-gold-dark .text-\[\#0369A1\],
+.theme-gold-dark .border-\[\#BAE6FD\] {
+  background-color: rgba(197, 160, 89, 0.12) !important;
+  color: #C5A059 !important;
+  border-color: rgba(197, 160, 89, 0.25) !important;
+}
+
+.theme-gold-dark .bg-\[\#F0FDF4\],
+.theme-gold-dark .text-\[\#166534\],
+.theme-gold-dark .border-\[\#DCFCE7\] {
+  background-color: rgba(52, 211, 153, 0.12) !important;
+  color: #34D399 !important;
+  border-color: rgba(52, 211, 153, 0.25) !important;
+}
+
+.theme-gold-dark .bg-\[\#FAF5FF\],
+.theme-gold-dark .text-\[\#6B21A8\],
+.theme-gold-dark .border-\[\#F3E8FF\] {
+  background-color: rgba(167, 139, 250, 0.12) !important;
+  color: #A78BFA !important;
+  border-color: rgba(167, 139, 250, 0.25) !important;
+}
+
+/* Modals overlays & portal backdrop elements */
+.theme-gold-dark .bg-slate-900\/50 {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(4px);
+}
+
+.theme-gold-dark .bg-indigo-50\/30 {
+  background-color: #18181B !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.theme-gold-dark .text-indigo-950 {
+  color: #FFFFFF !important;
+}
+
+/* Mini/Simulated Smartphone Viewport specifics */
+.theme-gold-dark .bg-slate-900.rounded-\[40px\] {
+  background-color: #0c0c0e !important;
+  border-color: #18181B !important;
+}
+
+.theme-gold-dark .bg-indigo-650 {
+  background-color: #C5A059 !important;
+  color: #09090B !important;
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "SalesFlow",
+  "description": "Sistema completo de comandas de atendimento para lojas e cursos. Inclui painel de caixa com abertura e fechamento de turno, controle de estoque, auto-serviço e assinaturas digitais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
