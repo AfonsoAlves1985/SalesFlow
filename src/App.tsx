@@ -38,7 +38,8 @@ import {
   Trash2,
   TrendingUp,
   Key,
-  MapPin
+  MapPin,
+  Camera
 } from 'lucide-react';
 
 // Subcomponents import
@@ -212,6 +213,11 @@ export default function App() {
   const [firstAccessNewPassword, setFirstAccessNewPassword] = useState('');
   const [firstAccessNewPasswordConfirm, setFirstAccessNewPasswordConfirm] = useState('');
   const [firstAccessError, setFirstAccessError] = useState('');
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileAvatar, setProfileAvatar] = useState('');
+  const [profileError, setProfileError] = useState('');
 
   // Drawer Opening/Closing input states
   const [isShiftOpenModalOpen, setIsShiftOpenModalOpen] = useState(false);
@@ -1254,7 +1260,8 @@ export default function App() {
         username: foundUser.name, 
         loginName: foundUser.username,
         role: foundUser.role,
-        email: foundUser.email
+        email: foundUser.email,
+        avatar: foundUser.avatar
       };
       setSession(newSession);
       localStorage.setItem('salesflow_session', JSON.stringify(newSession));
@@ -1310,7 +1317,8 @@ export default function App() {
       username: updatedUser.name, 
       loginName: updatedUser.username,
       role: updatedUser.role,
-      email: updatedUser.email
+      email: updatedUser.email,
+      avatar: updatedUser.avatar
     };
     
     setSession(newSession);
@@ -1329,6 +1337,88 @@ export default function App() {
   const handleLogout = () => {
     setSession(null);
     localStorage.removeItem('salesflow_session');
+  };
+
+  const openProfileModal = () => {
+    if (!session) return;
+    setProfileName(session.username || '');
+    setProfileEmail(session.email || '');
+    setProfileAvatar(session.avatar || '');
+    setProfileError('');
+    setIsProfileModalOpen(true);
+  };
+
+  const closeProfileModal = () => {
+    setIsProfileModalOpen(false);
+    setProfileName('');
+    setProfileEmail('');
+    setProfileAvatar('');
+    setProfileError('');
+  };
+
+  const handleProfileAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxSize = 160;
+        let { width, height } = img;
+
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+        setProfileAvatar(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session) return;
+
+    const cleanName = profileName.trim();
+    const cleanEmail = profileEmail.trim().toLowerCase();
+
+    if (!cleanName || !cleanEmail) {
+      setProfileError('Informe nome e e-mail para salvar o perfil.');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setProfileError('Informe um e-mail válido.');
+      return;
+    }
+
+    const updatedSession: UserSession = {
+      ...session,
+      username: cleanName,
+      email: cleanEmail,
+      avatar: profileAvatar || undefined
+    };
+
+    setUsers(curr => curr.map(user => {
+      const isCurrentUser = user.id === session.id || user.username === session.loginName;
+      return isCurrentUser
+        ? { ...user, name: cleanName, email: cleanEmail, avatar: profileAvatar || undefined }
+        : user;
+    }));
+    setSession(updatedSession);
+    localStorage.setItem('salesflow_session', JSON.stringify(updatedSession));
+    closeProfileModal();
   };
 
   const handleSaveUser = (user: SystemUser) => {
@@ -2329,16 +2419,34 @@ export default function App() {
                           {theme === 'gold-dark' ? 'Tema claro' : 'Tema escuro'}
                         </button>
                       )}
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-frz-primary text-white flex items-center justify-center text-sm font-black shrink-0">
-                          {session.username?.charAt(0).toUpperCase() || 'A'}
-                        </div>
-                        {!sidebarCollapsed && (
-                          <div className="min-w-0">
-                            <div className="text-xs font-black truncate">{session.username === 'admin' ? 'Administrador' : session.username}</div>
-                            <div className="text-[10px] text-slate-400 truncate">{session.role === 'admin' ? 'admin@salesflow.frz' : 'caixa@salesflow.frz'}</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={openProfileModal}
+                          className={`${sidebarCollapsed ? 'mx-auto justify-center' : 'flex-1'} min-w-0 flex items-center gap-3 rounded-xl hover:bg-white/5 transition cursor-pointer text-left`}
+                          title="Editar perfil"
+                        >
+                          <div className="w-9 h-9 rounded-full bg-frz-primary text-white flex items-center justify-center text-sm font-black shrink-0 overflow-hidden">
+                            {session.avatar ? (
+                              <img src={session.avatar} alt={session.username} className="w-full h-full object-cover" />
+                            ) : (
+                              session.username?.charAt(0).toUpperCase() || 'A'
+                            )}
                           </div>
-                        )}
+                          {!sidebarCollapsed && (
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-black truncate">{session.username}</div>
+                              <div className="text-[10px] text-slate-400 truncate">{session.email || session.loginName}</div>
+                            </div>
+                          )}
+                        </button>
+                        <button
+                          onClick={handleLogout}
+                          className={`${sidebarCollapsed ? 'mx-auto w-9 px-0' : 'px-2.5'} h-9 rounded-xl bg-slate-800 hover:bg-rose-950/80 border border-slate-700/70 hover:border-rose-800 text-slate-300 hover:text-rose-200 flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0`}
+                          title="Sair do sistema sem fechar o caixa"
+                        >
+                          <LogOut className="w-3.5 h-3.5" />
+                          {!sidebarCollapsed && <span className="text-[10px] font-black uppercase">Sair</span>}
+                        </button>
                       </div>
                     </div>
                   </aside>
@@ -2831,6 +2939,108 @@ export default function App() {
           onSaveUnidades={handleSaveUnidades}
           comandas={comandas}
         />
+      )}
+
+      {isProfileModalOpen && session && (
+        <div
+          onClick={closeProfileModal}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 relative cursor-default text-left"
+          >
+            <button
+              onClick={closeProfileModal}
+              className="absolute top-4 right-4 p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              title="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-base font-black text-slate-900 mb-1.5 flex items-center gap-1.5 font-sans">
+              <Users className="w-5 h-5 text-frz-primary" />
+              Editar Perfil
+            </h3>
+            <p className="text-xs text-slate-400 mb-4 font-sans">Atualize os dados visíveis do usuário atual sem fechar o caixa.</p>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4 font-sans">
+              {profileError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 rounded-xl text-xs font-bold">
+                  {profileError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="w-16 h-16 rounded-2xl bg-frz-primary text-white flex items-center justify-center text-xl font-black overflow-hidden shrink-0">
+                  {profileAvatar ? (
+                    <img src={profileAvatar} alt="Avatar do perfil" className="w-full h-full object-cover" />
+                  ) : (
+                    profileName.charAt(0).toUpperCase() || 'A'
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 space-y-2">
+                  <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase cursor-pointer transition">
+                    <Camera className="w-3.5 h-3.5" />
+                    Trocar avatar
+                    <input type="file" accept="image/*" onChange={handleProfileAvatarUpload} className="hidden" />
+                  </label>
+                  {profileAvatar && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileAvatar('')}
+                      className="block text-[10px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                    >
+                      Remover avatar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Nome Exibido</label>
+                <input
+                  type="text"
+                  required
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="w-full px-3.5 py-2 border rounded-xl text-xs font-bold text-slate-800 bg-slate-50/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">E-mail</label>
+                <input
+                  type="email"
+                  required
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                  className="w-full px-3.5 py-2 border rounded-xl text-xs font-bold text-slate-800 bg-slate-50/50"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 -mx-6 -mb-6 mt-6 rounded-b-3xl">
+                <span className="text-[10px] text-slate-400 font-semibold italic">Não altera caixa, comandas ou senha</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={closeProfileModal}
+                    className="px-4 py-2 border border-slate-300 hover:bg-slate-150 text-slate-700 text-xs font-extrabold rounded-xl transition cursor-pointer"
+                  >
+                    Sair
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5 text-black" />
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* MODAL: ABERTURA DE CAIXA */}

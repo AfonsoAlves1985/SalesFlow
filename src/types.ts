@@ -58,6 +58,7 @@ export interface UserSession {
   loginName: string;
   role: 'admin' | 'cashier';
   email?: string;
+  avatar?: string;
 }
 
 export interface SystemUser {
@@ -70,6 +71,7 @@ export interface SystemUser {
   password?: string;
   invitationCode?: string;
   needsPasswordChange?: boolean;
+  avatar?: string;
   createdAt: string;
 }
 
