@@ -58,6 +58,10 @@ import { testSupabaseConnection } from './lib/supabase';
 import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase, subscribeToSupabaseRealtime } from './lib/supabaseSync';
 
 export default function App() {
+  const initialComandaParam = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('comanda')
+    : null;
+
   // Brand Logo selection state
   const [brandLogoOption, setBrandLogoOption] = useState<'quantum' | 'shield' | 'infinite'>(() => {
     return (localStorage.getItem('salesflow_brand_logo_v5') as any) || 'infinite';
@@ -94,14 +98,14 @@ export default function App() {
 
   // Theme and viewing state
   const [theme, setTheme] = useState<ThemeType>('gold-dark');
-  const [viewMode, setViewMode] = useState<'both' | 'admin' | 'client'>('admin');
+  const [viewMode, setViewMode] = useState<'both' | 'admin' | 'client'>(initialComandaParam ? 'client' : 'admin');
 
   useEffect(() => {
     const resolved = theme === 'gold-dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', resolved);
     localStorage.setItem('frz-theme', resolved);
   }, [theme]);
-  const [isClientOnlyMode, setIsClientOnlyMode] = useState(false);
+  const [isClientOnlyMode, setIsClientOnlyMode] = useState(!!initialComandaParam);
   
   // Data State loading from localStorage with Initial Failback
   const [products, setProducts] = useState<Product[]>([]);
@@ -138,7 +142,7 @@ export default function App() {
 
   // Active states
   const [selectedComandaId, setSelectedComandaId] = useState<string | null>(null);
-  const [clientActiveComandaId, setClientActiveComandaId] = useState<string | null>(null);
+  const [clientActiveComandaId, setClientActiveComandaId] = useState<string | null>(initialComandaParam);
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'pdv'>('comandas');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
@@ -467,6 +471,8 @@ export default function App() {
           loadedUnidades = data.unidades;
         }
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const comandaParam = urlParams.get('comanda');
         const localDataVersion = localStorage.getItem('salesflow_comanda_version');
         if (localDataVersion) {
           comandaVersionRef.current = parseInt(localDataVersion) || 0;
@@ -495,7 +501,10 @@ export default function App() {
               const lc = loadedComandas.find(c => c.id === rc.id);
               return lc && isRemoteComandaNewer(rc, lc);
             });
-            if (serverHasNewerItems || (serverComandas.length > 0 && !loadedComandas.length)) {
+            const serverHasRequestedComanda = !!comandaParam
+              && serverComandas.some((c: Comanda) => c.id === comandaParam)
+              && !loadedComandas.some(c => c.id === comandaParam);
+            if (serverHasNewerItems || serverHasRequestedComanda || (serverComandas.length > 0 && !loadedComandas.length)) {
               setComandas(serverComandas);
               localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
               loadedComandas = serverComandas;
@@ -576,10 +585,6 @@ export default function App() {
           setSystemWhatsNumber(data.whatsNumber);
           localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
         }
-
-        // Check URL parameters to see if scanned on real mobile device
-        const urlParams = new URLSearchParams(window.location.search);
-        const comandaParam = urlParams.get('comanda');
 
         if (comandaParam) {
           const comandaExists = loadedComandas.find(c => c.id === comandaParam);
@@ -2004,6 +2009,7 @@ export default function App() {
             comandas={comandas}
             products={products}
             activeComandaId={clientActiveComandaId}
+            isSyncing={!isInitialized}
             onAddProductFromClient={handleAddProductToComanda}
             onSignExistingItem={handleSignExistingComandaItem}
             onDisconnectClient={handleDisconnectClient}
@@ -2813,6 +2819,7 @@ export default function App() {
               comandas={comandas}
               products={products}
               activeComandaId={clientActiveComandaId}
+              isSyncing={!isInitialized}
               onAddProductFromClient={handleAddProductToComanda}
               onSignExistingItem={handleSignExistingComandaItem}
               onDisconnectClient={handleDisconnectClient}

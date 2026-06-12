@@ -25,6 +25,7 @@ interface ClientMobileViewProps {
   comandas: Comanda[];
   products: Product[];
   activeComandaId: string | null;
+  isSyncing?: boolean;
   onAddProductFromClient: (comandaId: string, productId: string, quantity: number, signature: string) => void;
   onSignExistingItem: (comandaId: string, itemId: string, signature: string) => void;
   onDisconnectClient: () => void;
@@ -34,6 +35,7 @@ export default function ClientMobileView({
   comandas,
   products,
   activeComandaId,
+  isSyncing = false,
   onAddProductFromClient,
   onSignExistingItem,
   onDisconnectClient
@@ -513,7 +515,20 @@ export default function ClientMobileView({
         )}
 
         {/* WELCOME SHEET OR FORM IF VISITOR NO ACTIVE COMANDA */}
-        {!currentComanda ? (
+        {!currentComanda && activeComandaId ? (
+          <div className="flex-1 flex flex-col justify-center animate-fadeIn text-center px-4">
+            <div className="w-16 h-16 bg-frz-primary/15 text-frz-primary rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xs border border-frz-primary/20">
+              <QrCode className="w-8 h-8 animate-pulse" />
+            </div>
+            <h2 className="text-lg font-black text-slate-900">{isSyncing ? 'Carregando sua comanda' : 'Comanda não localizada'}</h2>
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              {isSyncing ? 'Estamos sincronizando' : 'Não encontramos'} a comanda <strong className="text-slate-700 font-mono">{activeComandaId}</strong> recebida pelo link.
+            </p>
+            <p className="text-[10px] text-slate-400 mt-4 font-bold uppercase tracking-wider">
+              {isSyncing ? 'Não é necessário digitar código ou fazer login.' : 'Confirme se a comanda continua aberta no caixa.'}
+            </p>
+          </div>
+        ) : !currentComanda ? (
           <div className="flex-1 flex flex-col justify-between animate-fadeIn">
             <div>
               {/* Virtual Badge */}
