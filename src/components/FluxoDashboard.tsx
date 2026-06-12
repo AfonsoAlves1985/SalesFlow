@@ -12,8 +12,15 @@ interface Props {
 type FilterPreset = 'today' | 'week' | 'month' | 'year' | 'custom';
 
 export default function FluxoDashboard({ products, comandas, stockMovements, setStockMovements }: Props) {
+  const toDateInputValue = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = toDateInputValue(now);
 
   const [filterPreset, setFilterPreset] = useState<FilterPreset>('today');
   const [startDate, setStartDate] = useState(todayStr);
@@ -26,24 +33,24 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     let start: string, end: string;
     switch (preset) {
       case 'today':
-        start = d.toISOString().split('T')[0];
+        start = toDateInputValue(d);
         end = start;
         break;
       case 'week': {
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
         const mon = new Date(d.setDate(diff));
-        start = mon.toISOString().split('T')[0];
-        end = new Date().toISOString().split('T')[0];
+        start = toDateInputValue(mon);
+        end = toDateInputValue(new Date());
         break;
       }
       case 'month':
-        start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-        end = new Date().toISOString().split('T')[0];
+        start = toDateInputValue(new Date(d.getFullYear(), d.getMonth(), 1));
+        end = toDateInputValue(new Date());
         break;
       case 'year':
-        start = new Date(d.getFullYear(), 0, 1).toISOString().split('T')[0];
-        end = new Date().toISOString().split('T')[0];
+        start = toDateInputValue(new Date(d.getFullYear(), 0, 1));
+        end = toDateInputValue(new Date());
         break;
       default:
         return;
@@ -51,6 +58,23 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     setStartDate(start);
     setEndDate(end);
   };
+
+  const getPeriodRange = () => {
+    const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+    const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+    const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+    return { start, end };
+  };
+
+  const isInPeriod = (value?: string) => {
+    if (!value) return false;
+    const { start, end } = getPeriodRange();
+    const t = new Date(value);
+    return t >= start && t <= end;
+  };
+
+  const formatCurrency = (value: number) => `R$ ${value.toFixed(2)}`;
 
   const fetchAllMovements = async () => {
     setLoading(true);
@@ -67,9 +91,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
   };
 
   const filteredMovements = useMemo(() => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
+    const { start, end } = getPeriodRange();
     return (stockMovements || []).filter(m => {
       const t = new Date(m.timestamp);
       return t >= start && t <= end;
@@ -80,14 +102,24 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     return comandas
       .filter(c => {
         if (c.status !== 'Pago' || !c.closedAt) return false;
-        const t = new Date(c.closedAt);
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        return t >= start && t <= end;
+        return isInPeriod(c.closedAt);
       })
       .reduce((sum, c) => sum + c.items.reduce((s, i) => s + (i.price * i.quantity), 0), 0);
   }, [comandas, startDate, endDate]);
+
+  const consumoAbertoPeriodo = useMemo(() => {
+    return comandas
+      .filter(c => c.status !== 'Pago')
+      .reduce((sum, c) => sum + c.items
+        .filter(i => isInPeriod(i.timestamp))
+        .reduce((s, i) => s + (i.price * i.quantity), 0), 0);
+  }, [comandas, startDate, endDate]);
+
+  const comandasPagasPeriodo = useMemo(() => {
+    return comandas.filter(c => c.status === 'Pago' && isInPeriod(c.closedAt)).length;
+  }, [comandas, startDate, endDate]);
+
+  const comandasAbertas = useMemo(() => comandas.filter(c => c.status !== 'Pago').length, [comandas]);
 
   const vendasPDVPeriodo = useMemo(() => {
     return filteredMovements
@@ -98,6 +130,18 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
   const estornosPDVPeriodo = useMemo(() => {
     return filteredMovements
       .filter(m => m.type === 'entrada' && m.reference.startsWith('Estorno PDV'))
+      .reduce((sum, m) => sum + m.totalValue, 0);
+  }, [filteredMovements]);
+
+  const baixasComandaPeriodo = useMemo(() => {
+    return filteredMovements
+      .filter(m => m.type === 'saida' && m.reference.startsWith('Comanda '))
+      .reduce((sum, m) => sum + m.totalValue, 0);
+  }, [filteredMovements]);
+
+  const estornosComandaPeriodo = useMemo(() => {
+    return filteredMovements
+      .filter(m => m.type === 'entrada' && (m.reference.startsWith('Estorno Comanda') || m.reference.startsWith('Cancelamento Comanda')))
       .reduce((sum, m) => sum + m.totalValue, 0);
   }, [filteredMovements]);
 
@@ -118,6 +162,8 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
   const valorEstoque = useMemo(() => {
     return products.reduce((sum, p) => sum + p.price * p.stock, 0);
   }, [products]);
+
+  const saldoMovimentacaoEstoque = saidas - entradas;
 
   const exportCSV = () => {
     const header = 'ID,Produto,Código,Tipo,Quantidade,Preço,Valor Total,Referência,Data';
@@ -166,13 +212,13 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       <h1>${title}</h1>
       <div class="sub">SalesFlow - Relatório de Movimentação de Estoque</div>
       <div class="resumo">
-        <div class="card"><div>Total Vendido</div><div class="val" style="color:#059669">R$ ${totalVendido.toFixed(2)}</div></div>
-        <div class="card"><div>Vendas Comanda</div><div class="val" style="color:#059669">R$ ${vendasComandaPeriodo.toFixed(2)}</div></div>
-        <div class="card"><div>Vendas PDV</div><div class="val" style="color:#059669">R$ ${vendasPDVPeriodo.toFixed(2)}</div></div>
-        <div class="card"><div>Estornos PDV</div><div class="val" style="color:#DC2626">R$ ${estornosPDVPeriodo.toFixed(2)}</div></div>
-        <div class="card"><div>Total Entradas</div><div class="val" style="color:#2563EB">R$ ${entradas.toFixed(2)}</div></div>
-        <div class="card"><div>Total Saídas</div><div class="val" style="color:#DC2626">R$ ${saidas.toFixed(2)}</div></div>
-        <div class="card"><div>Valor em Estoque</div><div class="val" style="color:#7C3AED">R$ ${valorEstoque.toFixed(2)}</div></div>
+        <div class="card"><div>Receita Realizada</div><div class="val" style="color:#059669">${formatCurrency(totalVendido)}</div></div>
+        <div class="card"><div>Comandas Pagas</div><div class="val" style="color:#059669">${formatCurrency(vendasComandaPeriodo)}</div></div>
+        <div class="card"><div>PDV Líquido</div><div class="val" style="color:#059669">${formatCurrency(vendasPDVPeriodo - estornosPDVPeriodo)}</div></div>
+        <div class="card"><div>Consumo em Aberto</div><div class="val" style="color:#D97706">${formatCurrency(consumoAbertoPeriodo)}</div></div>
+        <div class="card"><div>Entradas Estoque</div><div class="val" style="color:#2563EB">${formatCurrency(entradas)}</div></div>
+        <div class="card"><div>Saídas Estoque</div><div class="val" style="color:#DC2626">${formatCurrency(saidas)}</div></div>
+        <div class="card"><div>Valor em Estoque</div><div class="val" style="color:#7C3AED">${formatCurrency(valorEstoque)}</div></div>
       </div>
       <table>
         <thead><tr>
@@ -261,20 +307,15 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2 text-slate-400 mb-2">
             <DollarSign className="w-4 h-4 text-emerald-500" />
-            <span className="text-[10px] font-black uppercase tracking-wider">Total Vendido</span>
+            <span className="text-[10px] font-black uppercase tracking-wider">Receita Realizada</span>
           </div>
-          <div className="text-2xl font-black text-emerald-600 font-mono">R$ {totalVendido.toFixed(2)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">Vendas Comanda + PDV - Estornos</div>
+          <div className="text-2xl font-black text-emerald-600 font-mono">{formatCurrency(totalVendido)}</div>
+          <div className="text-[10px] text-slate-400 mt-1">Comandas pagas + PDV líquido</div>
           <div className="mt-2 space-y-1 text-[10px]">
-            <div className="flex justify-between"><span>Comandas:</span><span className="font-mono font-bold text-emerald-600">R$ {vendasComandaPeriodo.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>Vendas PDV:</span><span className="font-mono font-bold text-emerald-500">R$ {vendasPDVPeriodo.toFixed(2)}</span></div>
-            {estornosPDVPeriodo > 0 && <div className="flex justify-between"><span>Estornos PDV:</span><span className="font-mono font-bold text-rose-500">-R$ {estornosPDVPeriodo.toFixed(2)}</span></div>}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-1">Vendas Comanda + PDV - Estornos</div>
-          <div className="mt-2 space-y-1 text-[10px]">
-            <div className="flex justify-between"><span>Comandas:</span><span className="font-mono font-bold text-emerald-600">R$ {vendasComandaPeriodo.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span>Vendas PDV:</span><span className="font-mono font-bold text-emerald-500">R$ {vendasPDVPeriodo.toFixed(2)}</span></div>
-            {estornosPDVPeriodo > 0 && <div className="flex justify-between"><span>Estornos PDV:</span><span className="font-mono font-bold text-rose-500">-R$ {estornosPDVPeriodo.toFixed(2)}</span></div>}
+            <div className="flex justify-between"><span>Comandas pagas:</span><span className="font-mono font-bold text-emerald-600">{formatCurrency(vendasComandaPeriodo)}</span></div>
+            <div className="flex justify-between"><span>Vendas PDV:</span><span className="font-mono font-bold text-emerald-500">{formatCurrency(vendasPDVPeriodo)}</span></div>
+            {estornosPDVPeriodo > 0 && <div className="flex justify-between"><span>Estornos PDV:</span><span className="font-mono font-bold text-rose-500">-{formatCurrency(estornosPDVPeriodo)}</span></div>}
+            <div className="flex justify-between"><span>Comandas fechadas:</span><span className="font-mono font-bold text-slate-500">{comandasPagasPeriodo}</span></div>
           </div>
         </div>
 
@@ -283,10 +324,16 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
             <TrendingUp className="w-4 h-4 text-blue-500" />
             <span className="text-[10px] font-black uppercase tracking-wider">Entradas Estoque</span>
           </div>
-          <div className="text-2xl font-black text-blue-600 font-mono">R$ {entradas.toFixed(2)}</div>
+          <div className="text-2xl font-black text-blue-600 font-mono">{formatCurrency(entradas)}</div>
           <div className="text-[10px] text-slate-400 mt-1">
             {filteredMovements.filter(m => m.type === 'entrada').reduce((s, m) => s + m.quantity, 0)} unidades
           </div>
+          {estornosComandaPeriodo + estornosPDVPeriodo > 0 && (
+            <div className="mt-2 space-y-1 text-[10px]">
+              {estornosComandaPeriodo > 0 && <div className="flex justify-between"><span>Estornos comanda:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(estornosComandaPeriodo)}</span></div>}
+              {estornosPDVPeriodo > 0 && <div className="flex justify-between"><span>Estornos PDV:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(estornosPDVPeriodo)}</span></div>}
+            </div>
+          )}
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
@@ -294,19 +341,24 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
             <TrendingDown className="w-4 h-4 text-red-500" />
             <span className="text-[10px] font-black uppercase tracking-wider">Saídas Estoque</span>
           </div>
-          <div className="text-2xl font-black text-red-600 font-mono">R$ {saidas.toFixed(2)}</div>
+          <div className="text-2xl font-black text-red-600 font-mono">{formatCurrency(saidas)}</div>
           <div className="text-[10px] text-slate-400 mt-1">
             {filteredMovements.filter(m => m.type === 'saida').reduce((s, m) => s + m.quantity, 0)} unidades
+          </div>
+          <div className="mt-2 space-y-1 text-[10px]">
+            {baixasComandaPeriodo > 0 && <div className="flex justify-between"><span>Baixas comanda:</span><span className="font-mono font-bold text-red-600">{formatCurrency(baixasComandaPeriodo)}</span></div>}
+            {vendasPDVPeriodo > 0 && <div className="flex justify-between"><span>Baixas PDV:</span><span className="font-mono font-bold text-red-600">{formatCurrency(vendasPDVPeriodo)}</span></div>}
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2 text-slate-400 mb-2">
             <Package className="w-4 h-4 text-frz-primary" />
-            <span className="text-[10px] font-black uppercase tracking-wider">Produtos em Estoque</span>
+            <span className="text-[10px] font-black uppercase tracking-wider">Consumo em Aberto</span>
           </div>
-          <div className="text-2xl font-black text-frz-primary font-mono">{products.reduce((s, p) => s + p.stock, 0)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">{products.length} produtos cadastrados</div>
+          <div className="text-2xl font-black text-frz-primary font-mono">{formatCurrency(consumoAbertoPeriodo)}</div>
+          <div className="text-[10px] text-slate-400 mt-1">{comandasAbertas} comanda(s) aberta(s)</div>
+          <div className="text-[10px] text-amber-600 mt-2 font-bold">Ainda não entra em receita realizada</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
@@ -314,8 +366,9 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
             <Wallet className="w-4 h-4 text-violet-500" />
             <span className="text-[10px] font-black uppercase tracking-wider">Valor em Estoque</span>
           </div>
-          <div className="text-2xl font-black text-violet-600 font-mono">R$ {valorEstoque.toFixed(2)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">Valor total em estoque</div>
+          <div className="text-2xl font-black text-violet-600 font-mono">{formatCurrency(valorEstoque)}</div>
+          <div className="text-[10px] text-slate-400 mt-1">{products.reduce((s, p) => s + p.stock, 0)} unidades em {products.length} produtos</div>
+          <div className="text-[10px] text-slate-400 mt-1">Saldo mov. estoque: {formatCurrency(saldoMovimentacaoEstoque)}</div>
         </div>
       </div>
 
