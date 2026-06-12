@@ -259,9 +259,27 @@ app.get('/api/state', async (_req: any, res: any) => {
   res.json(db);
 });
 
-app.post('/api/state/sync', (req: any, res: any) => {
+app.post('/api/state/sync', async (req: any, res: any) => {
+  // Track removed IDs for Supabase deletion
+  const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
+  const oldNotificationIds = (db.notifications || []).map((n: any) => n.id);
+  const oldStockMovementIds = (db.stockMovements || []).map((m: any) => m.id);
+
   Object.assign(db, req.body);
   saveDb();
+
+  // Delete removed items from Supabase
+  if (supabase) {
+    const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
+    const removedNotificationIds = oldNotificationIds.filter((id: string) => !(db.notifications || []).some((n: any) => n.id === id));
+    const removedStockMovementIds = oldStockMovementIds.filter((id: string) => !(db.stockMovements || []).some((m: any) => m.id === id));
+    const deletePromises: Promise<any>[] = [];
+    if (removedComandaIds.length > 0) deletePromises.push(supabase.from('comandas').delete().in('id', removedComandaIds));
+    if (removedNotificationIds.length > 0) deletePromises.push(supabase.from('notifications').delete().in('id', removedNotificationIds));
+    if (removedStockMovementIds.length > 0) deletePromises.push(supabase.from('stock_movements').delete().in('id', removedStockMovementIds));
+    await Promise.all(deletePromises);
+  }
+
   syncToSupabase().catch(() => {});
   res.json({ success: true, ...db });
 });
