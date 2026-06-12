@@ -771,7 +771,7 @@ export default function ClientMobileView({
               {!isOrdering ? (
                 <div>
                   <div className="flex justify-between items-center mb-2.5">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Meus Pedidos no Recinto</h4>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Meus Pedidos:</h4>
                     <button
                       onClick={() => setIsOrdering(true)}
                       className="text-[10px] text-indigo-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"

@@ -239,13 +239,20 @@ export default function DirectPOSView({
   };
 
   const persistProducts = (updatedProducts: Product[]) => {
-    setProducts(updatedProducts);
-    localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
+    const now = new Date().toISOString();
+    const versionedProducts = updatedProducts.map(product => {
+      const previous = products.find(p => p.id === product.id);
+      return previous && JSON.stringify({ ...previous, updatedAt: undefined }) === JSON.stringify({ ...product, updatedAt: undefined })
+        ? product
+        : { ...product, updatedAt: now };
+    });
+    setProducts(versionedProducts);
+    localStorage.setItem('salesflow_products_v2', JSON.stringify(versionedProducts));
     localStorage.setItem('salesflow_comanda_version', Date.now().toString());
     fetch('/api/products/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedProducts)
+      body: JSON.stringify(versionedProducts)
     }).catch(() => {});
   };
 

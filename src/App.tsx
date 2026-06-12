@@ -259,6 +259,34 @@ export default function App() {
 
   const sanitizeComandas = (list: any[]) => list.filter(c => !isGeneratedModelComanda(c));
 
+  const isRemoteComandaOlder = (remote: Comanda, local: Comanda) => {
+    const remoteUpdated = new Date(remote.updatedAt || remote.closedAt || remote.createdAt || 0).getTime();
+    const localUpdated = new Date(local.updatedAt || local.closedAt || local.createdAt || 0).getTime();
+    if (remoteUpdated && localUpdated && remoteUpdated < localUpdated) return true;
+    if ((remote.items?.length || 0) < (local.items?.length || 0)) return true;
+    if (local.status === 'Pago' && remote.status !== 'Pago') return true;
+    if (local.closedAt && (!remote.closedAt || remote.closedAt < local.closedAt)) return true;
+    return false;
+  };
+
+  const isRemoteComandaNewer = (remote: Comanda, local: Comanda) => {
+    const remoteUpdated = new Date(remote.updatedAt || remote.closedAt || remote.createdAt || 0).getTime();
+    const localUpdated = new Date(local.updatedAt || local.closedAt || local.createdAt || 0).getTime();
+    if (remoteUpdated && localUpdated && remoteUpdated > localUpdated) return true;
+    if ((remote.items?.length || 0) > (local.items?.length || 0)) return true;
+    if (remote.status === 'Pago' && local.status !== 'Pago') return true;
+    if (remote.closedAt && (!local.closedAt || remote.closedAt > local.closedAt)) return true;
+    return false;
+  };
+
+  const mergeComandasFromRemote = (remoteComandas: Comanda[], localComandas: Comanda[]) => {
+    return remoteComandas.map(remote => {
+      const local = localComandas.find(c => c.id === remote.id);
+      if (!local) return remote;
+      return isRemoteComandaOlder(remote, local) ? local : remote;
+    });
+  };
+
   const applyRemoteState = (data: any) => {
     if (!data) return;
 
@@ -277,13 +305,10 @@ export default function App() {
     if (canApplyRemoteState) {
       const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
       if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
-        const isStale = remoteComandas.some(rc => {
-          const lc = comandasRef.current.find(c => c.id === rc.id);
-          return lc && rc.items.length < lc.items.length;
-        });
-        if (!isStale) {
-          setComandas(remoteComandas);
-          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(remoteComandas));
+        const mergedComandas = mergeComandasFromRemote(remoteComandas as Comanda[], comandasRef.current);
+        if (JSON.stringify(mergedComandas) !== JSON.stringify(comandasRef.current)) {
+          setComandas(mergedComandas);
+          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(mergedComandas));
         }
       }
 
@@ -464,11 +489,11 @@ export default function App() {
             // Still check stale detection for comandas
             const serverLooksStale = serverComandas.some((rc: Comanda) => {
               const lc = loadedComandas.find(c => c.id === rc.id);
-              return lc && rc.items.length < lc.items.length;
+              return lc && isRemoteComandaOlder(rc, lc);
             });
             const serverHasNewerItems = serverComandas.some((rc: Comanda) => {
               const lc = loadedComandas.find(c => c.id === rc.id);
-              return lc && rc.items.length > lc.items.length;
+              return lc && isRemoteComandaNewer(rc, lc);
             });
             if (serverHasNewerItems || (serverComandas.length > 0 && !loadedComandas.length)) {
               setComandas(serverComandas);
@@ -630,9 +655,16 @@ export default function App() {
 
   // Sync back into localStorage and server on state updates
   const saveProductsToStorage = (updatedProducts: Product[]) => {
-    setProducts(updatedProducts);
+    const now = new Date().toISOString();
+    const versionedProducts = updatedProducts.map(product => {
+      const previous = productsRef.current.find(p => p.id === product.id);
+      return previous && JSON.stringify({ ...previous, updatedAt: undefined }) === JSON.stringify({ ...product, updatedAt: undefined })
+        ? product
+        : { ...product, updatedAt: now };
+    });
+    setProducts(versionedProducts);
     const version = Date.now();
-    localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
+    localStorage.setItem('salesflow_products_v2', JSON.stringify(versionedProducts));
     localStorage.setItem('salesflow_comanda_version', version.toString());
     comandaVersionRef.current = version;
 
@@ -641,14 +673,20 @@ export default function App() {
     fetch('/api/products/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedProducts)
+      body: JSON.stringify(versionedProducts)
     }).finally(() => {
       comandaSyncGuardRef.current = false;
     }).catch(() => {});
   };
 
   const saveComandasToStorage = (updatedComandas: Comanda[]) => {
-    const cleanComandas = sanitizeComandas(updatedComandas) as Comanda[];
+    const now = new Date().toISOString();
+    const cleanComandas = sanitizeComandas(updatedComandas).map((comanda: Comanda) => {
+      const previous = comandasRef.current.find(c => c.id === comanda.id);
+      return previous && JSON.stringify({ ...previous, updatedAt: undefined }) === JSON.stringify({ ...comanda, updatedAt: undefined })
+        ? comanda
+        : { ...comanda, updatedAt: now };
+    }) as Comanda[];
     setComandas(cleanComandas);
     const version = Date.now();
     localStorage.setItem('salesflow_tickets_v2', JSON.stringify(cleanComandas));
@@ -676,9 +714,15 @@ export default function App() {
     
     let currentProds = products;
     if (updatedProducts) {
-      setProducts(updatedProducts);
-      localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
-      currentProds = updatedProducts;
+      const now = new Date().toISOString();
+      currentProds = updatedProducts.map(product => {
+        const previous = productsRef.current.find(p => p.id === product.id);
+        return previous && JSON.stringify({ ...previous, updatedAt: undefined }) === JSON.stringify({ ...product, updatedAt: undefined })
+          ? product
+          : { ...product, updatedAt: now };
+      });
+      setProducts(currentProds);
+      localStorage.setItem('salesflow_products_v2', JSON.stringify(currentProds));
     }
 
     comandaSyncGuardRef.current = true;
@@ -765,19 +809,6 @@ export default function App() {
                 localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
               }
               
-              const toastId = `toast-whats-connected-${Date.now()}`;
-              setActiveToasts(prev => [
-                ...prev,
-                {
-                  id: toastId,
-                  title: "🟢 WhatsApp Pareado!",
-                  description: `Dispositivo conectado com sucesso por QR Code!`,
-                  type: 'email'
-                }
-              ]);
-              setTimeout(() => {
-                setActiveToasts(current => current.filter(t => t.id !== toastId));
-              }, 4000);
             }
           })
           .catch(err => console.error("Error auto-connecting server session:", err));
@@ -1135,10 +1166,12 @@ export default function App() {
     };
 
     const safeNotifications = Array.isArray(notifications) ? notifications : [];
-    const updatedNotifs = [newNotifEmail, newNotifSms, newNotifWhatsApp, ...safeNotifications];
+    const updatedNotifs = [newNotifEmail, newNotifSms, ...safeNotifications];
     setNotifications(updatedNotifs);
     localStorage.setItem('salesflow_notifications', JSON.stringify(updatedNotifs));
-    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
+    const version = Date.now();
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
 
     // Post notification dispatches to Express server
     fetch('/api/notifications', {
@@ -1162,20 +1195,6 @@ export default function App() {
     // Toast notifications
     const toastEmailId = `toast-email-${Date.now()}`;
     const toastSmsId = `toast-sms-${Date.now()}`;
-    const toastWhatsId = `toast-whats-${Date.now()}`;
-
-    const whatsToastElement = isWhatsConnectedState ? {
-      id: toastWhatsId,
-      title: `💬 WhatsApp Automático Notificado`,
-      description: `Via WhatsApp do Sistema: ${systemWhatsNumber}`,
-      type: 'email' // maps to green message theme badge in UI
-    } : {
-      id: toastWhatsId,
-      title: `⚠️ Envio WhatsApp Bloqueado`,
-      description: `O número ${systemWhatsNumber} está deslogado! Conecte via QR Code.`,
-      type: 'sms' // alert notification badge styling (red highlight)
-    };
-
     setActiveToasts(prev => [
       ...prev,
       {
@@ -1189,8 +1208,7 @@ export default function App() {
         title: `📱 SMS Automático Enviado`,
         description: `Contato: ${phone} | Status: ${newStatus}`,
         type: 'sms'
-      },
-      whatsToastElement
+      }
     ]);
 
     // Slide out after 6 seconds
@@ -1221,53 +1239,16 @@ export default function App() {
   const dispatchComandaAccessWhatsApp = async (comanda: Comanda) => {
     const message = getComandaAccessMessage(comanda);
     const accessUrl = getComandaAccessUrl(comanda);
-    const phone = comanda.clientPhone || '';
-
-    const notificationId = `toast-comanda-link-${Date.now()}`;
     try {
       const res = await fetch('/api/whatsapp/send-comanda-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comanda, message, accessUrl })
       });
-      const data = await res.json().catch(() => ({}));
-
-      if (data.notification) {
-        setNotifications(prev => {
-          const next = [data.notification, ...prev.filter(n => n.id !== data.notification.id)].slice(0, 50);
-          localStorage.setItem('salesflow_notifications', JSON.stringify(next));
-          return next;
-        });
-      }
-
-      setActiveToasts(prev => [
-        ...prev,
-        {
-          id: notificationId,
-          title: data.success ? 'Link da Comanda Enviado' : 'Link da Comanda Gerado',
-          description: data.success
-            ? `WhatsApp enviado para ${phone || comanda.clientName}.`
-            : `Evolution não confirmou envio. Use o botão WhatsApp manual se necessário.`,
-          type: data.success ? 'email' : 'sms'
-        }
-      ]);
+      await res.json().catch(() => ({}));
     } catch (err) {
       console.error('Falha ao disparar link da comanda:', err);
-      window.open(getManualWhatsAppUrl(phone, message), '_blank', 'noopener,noreferrer');
-      setActiveToasts(prev => [
-        ...prev,
-        {
-          id: notificationId,
-          title: 'WhatsApp Manual Aberto',
-          description: `Mensagem da comanda ${comanda.id} pronta para envio.`,
-          type: 'sms'
-        }
-      ]);
     }
-
-    setTimeout(() => {
-      setActiveToasts(current => current.filter(t => t.id !== notificationId));
-    }, 6000);
   };
 
   const dispatchComandaUpdateWhatsApp = async (comanda: Comanda, updateType: 'update' | 'close' | 'reminder' = 'update') => {
@@ -1691,7 +1672,9 @@ export default function App() {
 
   const recordStockMovement = (movement: StockMovement) => {
     setStockMovements(prev => [movement, ...prev].slice(0, 1000));
-    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
+    const version = Date.now();
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
     fetch('/api/stock-movements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1716,7 +1699,9 @@ export default function App() {
     setNotifications(prev => {
       const updated = [notif, ...prev].slice(0, 200);
       localStorage.setItem('salesflow_notifications', JSON.stringify(updated));
-      localStorage.setItem('salesflow_comanda_version', Date.now().toString());
+      const version = Date.now();
+      localStorage.setItem('salesflow_comanda_version', version.toString());
+      comandaVersionRef.current = version;
       return updated;
     });
     fetch('/api/notifications', {
@@ -1971,6 +1956,7 @@ export default function App() {
   };
 
   const themeStyle = getThemeClasses();
+  const visibleNotifications = notifications.filter(notif => notif?.type !== 'WhatsApp');
 
   // Render Activation Invitation Screen if code is active
   if (activeInviteCode) {
@@ -2702,14 +2688,14 @@ export default function App() {
                       </div>
 
                       <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-                        {notifications.length === 0 ? (
+                        {visibleNotifications.length === 0 ? (
                           <div className="text-center py-12 text-slate-400">
                             <span className="text-xl block mb-2">✉️</span>
                             <span className="text-xs font-bold text-slate-700 block">Nenhum log de notificação enviado ainda.</span>
                             <p className="text-[10px] text-slate-400 max-w-[280px] mx-auto mt-1">Quando os clientes se registrarem ou o caixa fechar comandas, os disparos de SMS/E-mail automáticos serão ilustrados aqui.</p>
                           </div>
                         ) : (
-                          notifications.map((notif) => (
+                          visibleNotifications.map((notif) => (
                             <div key={notif.id} className="p-3.5 bg-slate-50/50 rounded-2xl border border-slate-100 flex flex-col md:flex-row justify-between gap-3 text-xs leading-relaxed animate-fadeIn">
                               <div className="flex gap-3 items-start">
                                 <div className={`p-1.5 rounded-lg shrink-0 ${

@@ -9,6 +9,7 @@ export interface Product {
   stock: number;
   category: string;
   image?: string;
+  updatedAt?: string;
 }
 
 export interface OrderedItem {
@@ -33,6 +34,7 @@ export interface Comanda {
   month: string;
   status: PaymentStatus;
   createdAt: string;
+  updatedAt?: string;
   closedAt?: string;
   items: OrderedItem[];
   unit?: string;

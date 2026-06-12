@@ -137,7 +137,7 @@ async function pullFromSupabase(defaults: any) {
       id: c.id, clientName: c.client_name, clientType: c.client_type,
       clientEmail: c.client_email, clientPhone: c.client_phone,
       courseOrTraining: c.course_or_training, month: c.month, status: c.status,
-      createdAt: c.created_at, closedAt: c.closed_at, unit: c.units,
+      createdAt: c.created_at, updatedAt: c.updated_at, closedAt: c.closed_at, unit: c.units,
       closureReminderActive: !!c.closure_reminder_active, items: c.items || []
     }));
     const generatedIds = mappedComandas
@@ -154,7 +154,7 @@ async function pullFromSupabase(defaults: any) {
       products: (prods.data || []).map((p: any) => ({
         id: p.id, code: p.code, name: p.name,
         price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
-        image: p.image || undefined
+        image: p.image || undefined, updatedAt: p.updated_at
       })),
       comandas: mappedComandas,
       notifications: (notifs.data || []).map((n: any) => ({
@@ -192,13 +192,13 @@ async function syncToSupabase() {
       upsertTable('products', 'id', db.products.map((p: any) => ({
         id: p.id, code: p.code, name: p.name,
         price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
-        image: p.image || null
+        image: p.image || null, updated_at: p.updatedAt || new Date().toISOString()
       }))),
       upsertTable('comandas', 'id', db.comandas.map((c: any) => ({
         id: c.id, client_name: c.clientName, client_type: c.clientType,
         client_email: c.clientEmail || null, client_phone: c.clientPhone || null,
         course_or_training: c.courseOrTraining, month: c.month, status: c.status,
-        created_at: c.createdAt, closed_at: c.closedAt || null, units: c.unit || null,
+        created_at: c.createdAt, updated_at: c.updatedAt || c.closedAt || c.createdAt || new Date().toISOString(), closed_at: c.closedAt || null, units: c.unit || null,
         closure_reminder_active: !!c.closureReminderActive, items: c.items || []
       }))),
       upsertTable('notifications', 'id', db.notifications.map((n: any) => ({
@@ -222,6 +222,49 @@ async function deleteFromSupabase(table: string, column: string, values: any[]) 
   if (!supabase || values.length === 0) return;
   const { error } = await supabase.from(table).delete().in(column, values);
   if (error) throw error;
+}
+
+function comandaTimestamp(c: any) {
+  return new Date(c?.updatedAt || c?.closedAt || c?.createdAt || 0).getTime() || 0;
+}
+
+function preferNewerComanda(incoming: any, current: any) {
+  if (!current) return incoming;
+  const incomingTs = comandaTimestamp(incoming);
+  const currentTs = comandaTimestamp(current);
+  if (incomingTs !== currentTs) return incomingTs > currentTs ? incoming : current;
+  if ((incoming.items || []).length !== (current.items || []).length) {
+    return (incoming.items || []).length > (current.items || []).length ? incoming : current;
+  }
+  if (incoming.status === 'Pago' && current.status !== 'Pago') return incoming;
+  if (current.status === 'Pago' && incoming.status !== 'Pago') return current;
+  return incoming;
+}
+
+function mergeComandaLists(incoming: any[], current: any[]) {
+  const byId = new Map<string, any>();
+  current.forEach(c => c?.id && byId.set(c.id, c));
+  incoming.forEach(c => c?.id && byId.set(c.id, preferNewerComanda(c, byId.get(c.id))));
+  return incoming.map(c => byId.get(c.id)).filter(Boolean);
+}
+
+function productTimestamp(p: any) {
+  return new Date(p?.updatedAt || 0).getTime() || 0;
+}
+
+function preferNewerProduct(incoming: any, current: any) {
+  if (!current) return incoming;
+  const incomingTs = productTimestamp(incoming);
+  const currentTs = productTimestamp(current);
+  if (incomingTs && currentTs && incomingTs !== currentTs) return incomingTs > currentTs ? incoming : current;
+  return incoming;
+}
+
+function mergeProductLists(incoming: any[], current: any[]) {
+  const byId = new Map<string, any>();
+  current.forEach(p => p?.id && byId.set(p.id, p));
+  incoming.forEach(p => p?.id && byId.set(p.id, preferNewerProduct(p, byId.get(p.id))));
+  return incoming.map(p => byId.get(p.id)).filter(Boolean);
 }
 
 // --- DB persistence ---
@@ -274,7 +317,14 @@ app.post('/api/state/sync', async (req: any, res: any) => {
   const oldCategoryNames = (db.categories || []).map((name: string) => name);
   const oldUnitNames = (db.unidades || []).map((name: string) => name);
 
-  Object.assign(db, req.body);
+  const incomingState = { ...req.body };
+  if (Array.isArray(incomingState.products)) {
+    incomingState.products = mergeProductLists(incomingState.products, db.products || []);
+  }
+  if (Array.isArray(incomingState.comandas)) {
+    incomingState.comandas = mergeComandaLists(incomingState.comandas, db.comandas || []);
+  }
+  Object.assign(db, incomingState);
   saveDb();
 
   // Delete removed items from Supabase
@@ -295,17 +345,17 @@ app.post('/api/state/sync', async (req: any, res: any) => {
     await Promise.all(deletePromises);
   }
 
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, ...db });
 });
 
-app.post('/api/products', (req: any, res: any) => {
-  const p = req.body;
+app.post('/api/products', async (req: any, res: any) => {
+  const p = { ...req.body, updatedAt: req.body?.updatedAt || new Date().toISOString() };
   if (!p?.id) return res.status(400).json({ error: 'Missing id' });
   const i = db.products.findIndex((x: any) => x.id === p.id);
-  if (i >= 0) db.products[i] = p; else db.products.push(p);
+  if (i >= 0) db.products[i] = preferNewerProduct(p, db.products[i]); else db.products.push(p);
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, products: db.products });
 });
 
@@ -313,27 +363,27 @@ app.delete('/api/products/:id', async (req: any, res: any) => {
   db.products = db.products.filter((p: any) => p.id !== req.params.id);
   saveDb();
   await deleteFromSupabase('products', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase product delete failed:', e?.message));
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, products: db.products });
 });
 
 app.post('/api/products/bulk', async (req: any, res: any) => {
   const oldProductIds = (db.products || []).map((p: any) => p.id);
-  if (Array.isArray(req.body)) db.products = req.body;
+  if (Array.isArray(req.body)) db.products = mergeProductLists(req.body, db.products || []);
   saveDb();
   const removedProductIds = oldProductIds.filter((id: string) => !(db.products || []).some((p: any) => p.id === id));
   await deleteFromSupabase('products', 'id', removedProductIds).catch((e) => console.error('[SalesFlow] Supabase products bulk delete failed:', e?.message));
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, products: db.products });
 });
 
-app.post('/api/comandas', (req: any, res: any) => {
-  const c = req.body;
+app.post('/api/comandas', async (req: any, res: any) => {
+  const c = { ...req.body, updatedAt: req.body?.updatedAt || new Date().toISOString() };
   if (!c?.id) return res.status(400).json({ error: 'Missing id' });
   const i = db.comandas.findIndex((x: any) => x.id === c.id);
-  if (i >= 0) db.comandas[i] = c; else db.comandas.unshift(c);
+  if (i >= 0) db.comandas[i] = preferNewerComanda(c, db.comandas[i]); else db.comandas.unshift(c);
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, comandas: db.comandas });
 });
 
@@ -341,37 +391,45 @@ app.delete('/api/comandas/:id', async (req: any, res: any) => {
   db.comandas = db.comandas.filter((c: any) => c.id !== req.params.id);
   saveDb();
   await deleteFromSupabase('comandas', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase comanda delete failed:', e?.message));
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, comandas: db.comandas });
 });
 
 app.post('/api/comandas/bulk', async (req: any, res: any) => {
   const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
-  if (Array.isArray(req.body)) db.comandas = req.body;
+  if (Array.isArray(req.body)) db.comandas = mergeComandaLists(req.body, db.comandas || []);
   saveDb();
   const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
   await deleteFromSupabase('comandas', 'id', removedComandaIds).catch((e) => console.error('[SalesFlow] Supabase comandas bulk delete failed:', e?.message));
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, comandas: db.comandas });
 });
 
-app.post('/api/notifications', (req: any, res: any) => {
+app.post('/api/notifications', async (req: any, res: any) => {
   if (req.body) {
     db.notifications.unshift(req.body);
     db.notifications = db.notifications.slice(0, 50);
   }
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, notifications: db.notifications });
 });
 
-app.post('/api/reset', (_req: any, res: any) => {
+app.post('/api/reset', async (_req: any, res: any) => {
   db.products = [];
   db.comandas = [];
   db.notifications = [];
   db.stockMovements = [];
   saveDb();
-  syncToSupabase().catch(() => {});
+  if (supabase) {
+    await Promise.all([
+      supabase.from('products').delete().neq('id', ''),
+      supabase.from('comandas').delete().neq('id', ''),
+      supabase.from('notifications').delete().neq('id', ''),
+      supabase.from('stock_movements').delete().neq('id', '')
+    ]).catch((e) => console.error('[SalesFlow] Supabase reset delete failed:', e?.message));
+  }
+  await syncToSupabase();
   res.json({ success: true, ...db });
 });
 
@@ -390,20 +448,21 @@ app.get('/api/stock-movements', (req: any, res: any) => {
   res.json({ success: true, movements: movements.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()) });
 });
 
-app.post('/api/stock-movements', (req: any, res: any) => {
+app.post('/api/stock-movements', async (req: any, res: any) => {
   const movement = req.body;
   if (!movement?.id) return res.status(400).json({ error: 'Missing id' });
   if (!db.stockMovements) db.stockMovements = [];
   db.stockMovements.unshift(movement);
   if (db.stockMovements.length > 1000) db.stockMovements = db.stockMovements.slice(0, 1000);
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, movement });
 });
 
-app.post('/api/whatsapp/config', (req: any, res: any) => {
+app.post('/api/whatsapp/config', async (req: any, res: any) => {
   if (req.body?.number) db.whatsNumber = req.body.number;
   saveDb();
+  await syncToSupabase();
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
 });
 
@@ -437,7 +496,7 @@ app.post('/api/whatsapp/send-comanda-link', async (req: any, res: any) => {
   db.notifications.unshift(notification);
   db.notifications = db.notifications.slice(0, 50);
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
 
   res.status(result.success ? 200 : 202).json({
     success: result.success,
@@ -480,7 +539,7 @@ app.post('/api/whatsapp/send-comanda-update', async (req: any, res: any) => {
   db.notifications.unshift(notification);
   db.notifications = db.notifications.slice(0, 50);
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
 
   res.status(result.success ? 200 : 202).json({
     success: result.success,
@@ -493,7 +552,7 @@ app.post('/api/whatsapp/send-comanda-update', async (req: any, res: any) => {
   });
 });
 
-app.post('/api/whatsapp/connect', (req: any, res: any) => {
+app.post('/api/whatsapp/connect', async (req: any, res: any) => {
   if (req.body?.number) db.whatsNumber = req.body.number;
   else {
     const ddds = ['11', '12', '19', '21', '31', '41', '51'];
@@ -502,26 +561,28 @@ app.post('/api/whatsapp/connect', (req: any, res: any) => {
   }
   db.whatsStatus = 'connecting';
   saveDb();
+  await syncToSupabase();
   setTimeout(() => {
     if (db.whatsStatus === 'connecting') {
       db.whatsStatus = 'connected';
       saveDb();
+      syncToSupabase().catch(() => {});
     }
   }, 4500);
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
 });
 
-app.post('/api/whatsapp/force-connect', (_req: any, res: any) => {
+app.post('/api/whatsapp/force-connect', async (_req: any, res: any) => {
   db.whatsStatus = 'connected';
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
 });
 
-app.post('/api/whatsapp/disconnect', (_req: any, res: any) => {
+app.post('/api/whatsapp/disconnect', async (_req: any, res: any) => {
   db.whatsStatus = 'disconnected';
   saveDb();
-  syncToSupabase().catch(() => {});
+  await syncToSupabase();
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
 });
 
