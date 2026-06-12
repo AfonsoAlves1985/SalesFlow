@@ -36,6 +36,7 @@ create table if not exists public.products (
     price numeric(10,2) default 0.00 not null,
     stock integer default 0 not null,
     category text not null,
+    image text,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -141,3 +142,24 @@ create index if not exists cashier_shifts_is_active_idx on public.cashier_shifts
 
 alter table public.cashier_shifts enable row level security;
 create policy "Acesso público completo a turnos de caixa" on public.cashier_shifts for all using (true) with check (true);
+
+-- 8. Tabela de Movimentação de Estoque (Fluxo de Entrada/Saída)
+create table if not exists public.stock_movements (
+    id text primary key,
+    product_id text not null,
+    product_name text not null,
+    product_code text not null,
+    type text not null check (type in ('entrada', 'saida', 'ajuste')),
+    quantity integer not null default 0,
+    price numeric(10,2) not null default 0.00,
+    total_value numeric(10,2) not null default 0.00,
+    reference text not null,
+    timestamp timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create index if not exists stock_movements_timestamp_idx on public.stock_movements (timestamp desc);
+create index if not exists stock_movements_type_idx on public.stock_movements (type);
+create index if not exists stock_movements_product_id_idx on public.stock_movements (product_id);
+
+alter table public.stock_movements enable row level security;
+create policy "Acesso público completo a movimentos de estoque" on public.stock_movements for all using (true) with check (true);

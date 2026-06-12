@@ -115,7 +115,7 @@ export default function UnitManagementModal({
       >
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2">
-            <Building2 className="w-4.5 h-4.5 text-[#C5A059]" />
+            <Building2 className="w-4.5 h-4.5 text-frz-primary" />
             <h3 className="text-sm font-black text-slate-900">Gerenciar Unidades</h3>
           </div>
           <button 
@@ -142,7 +142,7 @@ export default function UnitManagementModal({
             <button
               id="new-unit-submit"
               type="submit"
-              className="px-3.5 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black border border-[#B38F4B] rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
+              className="px-3.5 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5 text-black" />
               Adicionar
@@ -239,7 +239,7 @@ export default function UnitManagementModal({
               id="unit-mgmt-confirm-btn"
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black border border-[#B38F46] text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black border border-[#1565C0] text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5 text-black" />
               Confirmar e Sair

@@ -215,7 +215,7 @@ export default function ComandaList({
               <button
                 type="button"
                 onClick={clearFilters}
-                className="border border-slate-200 hover:border-[#C5A059] bg-slate-50 hover:bg-[#C5A059]/10 text-slate-700 font-extrabold text-xs px-3 py-2 rounded-xl transition cursor-pointer"
+                className="border border-slate-200 hover:border-frz-primary bg-slate-50 hover:bg-frz-primary/10 text-slate-700 font-extrabold text-xs px-3 py-2 rounded-xl transition cursor-pointer"
               >
                 Limpar Filtros
               </button>
@@ -224,7 +224,7 @@ export default function ComandaList({
             {onOpenManageUnits && (
               <button
                 onClick={onOpenManageUnits}
-                className="bg-[#C5A059] border border-[#B38F4B] hover:bg-[#B38F4B] text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1"
+                className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1"
               >
                 Gerenciar Unidades
               </button>
@@ -232,7 +232,7 @@ export default function ComandaList({
 
             <button
               onClick={onOpenCreateModal}
-              className="bg-[#C5A059] border border-[#B38F4B] hover:bg-[#B38F4B] text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               Criar Comanda
             </button>
@@ -267,7 +267,7 @@ export default function ComandaList({
                       <button
                         type="button"
                         onClick={clearFilters}
-                        className="ml-3 text-[#C5A059] hover:text-[#B38F4B] font-black underline underline-offset-4"
+                        className="ml-3 text-frz-primary hover:text-frz-primary-hover font-black underline underline-offset-4"
                       >
                         Limpar filtros
                       </button>
@@ -310,7 +310,7 @@ export default function ComandaList({
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
-                          className={`px-3 py-1 text-xs font-extrabold rounded-lg transition cursor-pointer ${isSelected ? 'bg-[#C5A059] text-black border border-[#B38F4B]' : 'border border-[#B38F4B]/30 text-black bg-[#C5A059]/40 hover:bg-[#C5A059]/60'}`}
+                          className={`px-3 py-1 text-xs font-extrabold rounded-lg transition cursor-pointer ${isSelected ? 'bg-frz-primary text-black border border-frz-primary-hover' : 'border border-frz-primary-hover/30 text-black bg-frz-primary/40 hover:bg-frz-primary/60'}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelect(comanda);

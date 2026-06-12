@@ -25,6 +25,7 @@ interface AccessManagementProps {
   onDeleteUser: (userId: string) => void;
   currentUserSessionId?: string;
   onSimulateInvite: (code: string) => void;
+  onResetSystem: () => void;
 }
 
 export default function AccessManagement({ 
@@ -32,13 +33,19 @@ export default function AccessManagement({
   onSaveUser, 
   onDeleteUser, 
   currentUserSessionId = 'u-superadmin',
-  onSimulateInvite
+  onSimulateInvite,
+  onResetSystem
 }: AccessManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetLogin, setResetLogin] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+
   // Confirmed created state for invitations
   const [newlyCreatedUserForInvite, setNewlyCreatedUserForInvite] = useState<SystemUser | null>(null);
   const [copiedSuccessLink, setCopiedSuccessLink] = useState(false);
@@ -149,6 +156,19 @@ export default function AccessManagement({
     });
   };
 
+  const handleResetConfirm = () => {
+    const admin = users.find(u => u.role === 'admin' && u.username === resetLogin && u.password === resetPassword);
+    if (admin) {
+      setShowResetConfirm(false);
+      setResetLogin('');
+      setResetPassword('');
+      setResetError('');
+      onResetSystem();
+    } else {
+      setResetError('Login ou senha inválidos. Apenas administradores podem zerar o sistema.');
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -171,7 +191,7 @@ export default function AccessManagement({
         </div>
         <button
           onClick={handleOpenNew}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
         >
           <UserPlus className="w-4 h-4 text-black" />
           Convidar Novo Usuário
@@ -327,6 +347,115 @@ export default function AccessManagement({
         </div>
       </div>
 
+      {/* DANGER ZONE - Reset System */}
+      <div className="mx-6 mb-6 p-5 bg-rose-50 border-2 border-rose-200 rounded-2xl">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-rose-100 rounded-xl shrink-0">
+            <AlertTriangle className="w-5 h-5 text-rose-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-black text-rose-800 uppercase tracking-wider">Zona de Perigo</h3>
+            <p className="text-xs text-rose-700 font-medium mt-1 leading-relaxed">
+              Esta ação remove <strong>todos os dados</strong> do sistema: produtos, comandas, movimentações de estoque, 
+              notificações e configurações. Os usuários e permissões são preservados.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() => {
+              setShowResetConfirm(true);
+              setResetLogin('');
+              setResetPassword('');
+              setResetError('');
+            }}
+            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-sm flex items-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            Zerar Sistema
+          </button>
+        </div>
+      </div>
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div
+          onClick={() => setShowResetConfirm(false)}
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden animate-slideUp cursor-default"
+          >
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-100 rounded-xl">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Zerar Sistema</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Confirme com login e senha de administrador
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3">
+                <p className="text-xs text-rose-700 font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Todos os dados serão perdidos permanentemente. Esta ação não pode ser desfeita.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wide mb-1">Login do Administrador</label>
+                  <input
+                    type="text"
+                    placeholder="Digite seu username de admin..."
+                    value={resetLogin}
+                    onChange={(e) => { setResetLogin(e.target.value); setResetError(''); }}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-700 outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wide mb-1">Senha</label>
+                  <input
+                    type="password"
+                    placeholder="Digite sua senha..."
+                    value={resetPassword}
+                    onChange={(e) => { setResetPassword(e.target.value); setResetError(''); }}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-700 outline-none"
+                  />
+                </div>
+                {resetError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {resetError}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => setShowResetConfirm(false)}
+                  className="flex-1 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-extrabold cursor-pointer transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleResetConfirm}
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-sm cursor-pointer transition flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Confirmar e Zerar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FORM MODAL (Convidar ou Editar Colaborador) */}
       {isFormOpen && (
         <div 
@@ -438,7 +567,7 @@ export default function AccessManagement({
                     className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 text-slate-700 outline-none font-mono font-bold"
                   />
                   {status === 'invited' && (
-                    <span className="text-[9px] text-[#C5A059] font-semibold mt-1 block">
+                    <span className="text-[9px] text-frz-primary font-semibold mt-1 block">
                       ⚠ O usuário do convite deverá preencher essa senha para validar seu acesso e depois criará a definitiva.
                     </span>
                   )}
@@ -502,7 +631,7 @@ export default function AccessManagement({
                 <button
                   type="submit"
                   disabled={editingId === 'u-superadmin' && role !== 'admin'}
-                  className="flex-1 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black rounded-xl text-xs font-black shadow-sm cursor-pointer transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-black shadow-sm cursor-pointer transition disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5 text-black" />
                   {editingId ? 'Confirmar e Salvar' : 'Gerar Convite'}
@@ -556,7 +685,7 @@ export default function AccessManagement({
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-[10px] text-slate-400 font-black uppercase">Senha Temporária</span>
-                <span className="font-mono text-xs font-black bg-indigo-500/10 border border-indigo-500/25 text-[#C5A059] px-2 py-0.5 rounded">
+                <span className="font-mono text-xs font-black bg-indigo-500/10 border border-indigo-500/25 text-frz-primary px-2 py-0.5 rounded">
                   {newlyCreatedUserForInvite.password}
                 </span>
               </div>
@@ -597,7 +726,7 @@ export default function AccessManagement({
                   )}
                 </button>
               </div>
-              <span className="block text-[10px] text-[#C5A059] font-medium leading-relaxed">
+              <span className="block text-[10px] text-frz-primary font-medium leading-relaxed">
                 💡 Compartilhe este link com o novo colaborador. Nele já está embutido o código de ativação e a senha temporária dele. Ao primeiro acesso ele preencherá esses dados e já vai mudar para a senha definitiva!
               </span>
             </div>
@@ -613,7 +742,7 @@ export default function AccessManagement({
               <button
                 type="button"
                 onClick={() => setNewlyCreatedUserForInvite(null)}
-                className="px-6 py-2.5 bg-[#C5A059] hover:bg-[#B38F4B] text-black border border-[#B38F4B] text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
               >
                 Confirmar e Concluir <Check className="w-4 h-4 text-black stroke-[3]" />
               </button>

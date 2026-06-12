@@ -1,13 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SalesFlow - Sistema de Gestão de Comandas</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.svg" />
+    <title>SalesFlow . Grupo FRZ</title>
+    <meta name="description" content="Sistema de gestão de comandas e estoque do FRZ Group." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SalesFlow" />
+    <meta property="og:title" content="SalesFlow | FRZ Group" />
+    <meta property="og:description" content="Sistema de gestão de comandas e estoque do FRZ Group." />
+    <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+    <script>
+      (() => {
+        const stored = localStorage.getItem('frz-theme') || 'system';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = stored === 'system' ? (prefersDark ? 'dark' : 'light') : stored;
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

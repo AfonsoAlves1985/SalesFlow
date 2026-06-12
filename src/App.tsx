@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, UserSession, SystemUser } from './types';
+import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, UserSession, SystemUser, StockMovement } from './types';
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS, MONTHS } from './initialData';
 import { 
   Plus, 
@@ -44,12 +44,15 @@ import {
 // Subcomponents import
 import StockManagement from './components/StockManagement';
 import ComandaList from './components/ComandaList';
+import ComandaPOSView from './components/ComandaPOSView';
 import ComandaDetailView from './components/ComandaDetailView';
 import ClientMobileView from './components/ClientMobileView';
 import AccessManagement from './components/AccessManagement';
 import InviteActivation from './components/InviteActivation';
 import UnitManagementModal from './components/UnitManagementModal';
-import WhatsAppAuthSandbox from './components/WhatsAppAuthSandbox';
+import FluxoDashboard from './components/FluxoDashboard';
+import DirectPOSView from './components/DirectPOSView';
+
 import { testSupabaseConnection } from './lib/supabase';
 import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase, subscribeToSupabaseRealtime } from './lib/supabaseSync';
 
@@ -63,7 +66,7 @@ export default function App() {
     switch (option) {
       case 'quantum':
         return (
-          <div className="relative w-10 h-10 flex items-center justify-center bg-gradient-to-tr from-[#C5A059] to-[#E5C079] rounded-xl shadow-lg shadow-amber-500/10 transition-all duration-300 transform hover:scale-105 active:scale-95">
+          <div className="relative w-10 h-10 flex items-center justify-center bg-gradient-to-tr from-[#1876D2] to-[#E5C079] rounded-xl shadow-lg shadow-amber-500/10 transition-all duration-300 transform hover:scale-105 active:scale-95">
             <Sparkles className="w-5.5 h-5.5 text-zinc-950 stroke-[2.5] animate-pulse" />
             <span className="absolute -top-0.5 -right-0.5 w-2 bg-indigo-500 border border-slate-900 rounded-full animate-ping" />
           </div>
@@ -71,7 +74,7 @@ export default function App() {
       case 'shield':
         return (
           <div className="relative w-10 h-10 flex items-center justify-center bg-slate-900 border border-amber-500/30 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 active:scale-95">
-            <Shield className="w-5.5 h-5.5 text-[#C5A059]" />
+            <Shield className="w-5.5 h-5.5 text-frz-primary" />
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-[9px] font-black font-mono text-amber-100">$</span>
             </div>
@@ -91,6 +94,12 @@ export default function App() {
   // Theme and viewing state
   const [theme, setTheme] = useState<ThemeType>('gold-dark');
   const [viewMode, setViewMode] = useState<'both' | 'admin' | 'client'>('both');
+
+  useEffect(() => {
+    const resolved = theme === 'gold-dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', resolved);
+    localStorage.setItem('frz-theme', resolved);
+  }, [theme]);
   const [isClientOnlyMode, setIsClientOnlyMode] = useState(false);
   
   // Data State loading from localStorage with Initial Failback
@@ -129,7 +138,8 @@ export default function App() {
   // Active states
   const [selectedComandaId, setSelectedComandaId] = useState<string | null>(null);
   const [clientActiveComandaId, setClientActiveComandaId] = useState<string | null>(null);
-  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'caixa_notificacoes' | 'acessos'>('comandas');
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'pdv'>('comandas');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // System Users List for Access Management
   const [users, setUsers] = useState<SystemUser[]>(() => {
@@ -180,6 +190,7 @@ export default function App() {
   
   // Notification logs & Toast state (Configure um sistema de notificação automatizado)
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [activeToasts, setActiveToasts] = useState<Array<{ id: string; title: string; description: string; type: 'email' | 'sms' }>>([]);
 
   // Modal creation state for Admin
@@ -216,6 +227,9 @@ export default function App() {
   const notificationsRef = useRef<any[]>(notifications);
   const categoriesRef = useRef<string[]>(categories);
   const unidadesRef = useRef<string[]>(unidades);
+  const comandaSyncGuardRef = useRef(false);
+  const comandaCooldownUntilRef = useRef(0);
+  const comandaVersionRef = useRef(0);
 
   useEffect(() => {
     productsRef.current = products;
@@ -231,34 +245,44 @@ export default function App() {
     return name === 'Cliente QR Especial'
       || name.startsWith('Cliente Smartphone ')
       || course === 'Área do Aluno Elite'
-      || course === 'Treinamento de Auto-Atendimento';
+      || course === 'Treinamento de Auto-Atendimento'
+      || (name === 'Venda Balcão' && course === 'PDV');
   };
 
   const sanitizeComandas = (list: any[]) => list.filter(c => !isGeneratedModelComanda(c));
 
   const applyRemoteState = (data: any) => {
     if (!data) return;
-    const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
 
-    if (data.products && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
-      setProducts(data.products);
-      localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+    // Sync comandas from server.
+    // Guard: skip while a local POST is in flight.
+    // Cooldown: skip for 3s after a local save to avoid stale data from other instances.
+    // Version: read the latest comanda version from localStorage (written by any tab) and
+    //   set cooldown if a newer version exists (cross-tab awareness).
+    // Stale detection: if remote has MORE items than local, it's old data → skip.
+    const latestVersion = parseInt(localStorage.getItem('salesflow_comanda_version') || '0');
+    if (latestVersion > comandaVersionRef.current) {
+      comandaVersionRef.current = latestVersion;
+      comandaCooldownUntilRef.current = Date.now() + 3000;
     }
-    if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
-      setComandas(remoteComandas);
-      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(remoteComandas));
+    const canOverwriteComandas = !comandaSyncGuardRef.current && Date.now() >= comandaCooldownUntilRef.current;
+    if (canOverwriteComandas) {
+      const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
+      if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
+        const isStale = remoteComandas.some(rc => {
+          const lc = comandasRef.current.find(c => c.id === rc.id);
+          return lc && rc.items.length > lc.items.length;
+        });
+        if (!isStale) {
+          setComandas(remoteComandas);
+          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(remoteComandas));
+        }
+      }
     }
-    if (data.notifications && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
+
+    if (data.notifications) {
       setNotifications(data.notifications);
       localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-    }
-    if (data.categories && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
-      setCategories(data.categories);
-      localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
-    }
-    if (data.unidades && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
-      setUnidades(data.unidades);
-      localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
     }
     if (data.whatsStatus) {
       setWhatsConnectionStatus(data.whatsStatus);
@@ -378,13 +402,13 @@ export default function App() {
       .then(data => {
         let needsSyncToServer = false;
 
-        if (data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
+        if (data.categories && Array.isArray(data.categories) && data.categories.length > 0 && !cachedCategories) {
           setCategories(data.categories);
           localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
           loadedCategories = data.categories;
         }
 
-        if (data.unidades && Array.isArray(data.unidades) && data.unidades.length > 0) {
+        if (data.unidades && Array.isArray(data.unidades) && data.unidades.length > 0 && !cachedUnidades) {
           setUnidades(data.unidades);
           localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
           loadedUnidades = data.unidades;
@@ -399,13 +423,29 @@ export default function App() {
           needsSyncToServer = true;
         }
 
-        // Server is empty or does not have comandas, but client has comandas in localStorage
+        // Server comandas vs local comandas — trust local if we have a version (avoids stale data from isolated instances)
         const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
-        if (serverComandas.length > 0) {
+        const localComandaVersion = localStorage.getItem('salesflow_comanda_version');
+
+        if (localComandaVersion && loadedComandas.length > 0) {
+          // Local has comandas with a version — trust local over server (server instance may be stale)
+          if (serverComandas.length === 0) {
+            needsSyncToServer = true;
+          } else {
+            // Check if server is actually stale (has MORE items in any comanda = old data before deletion)
+            const isStale = serverComandas.some(rc => {
+              const lc = loadedComandas.find(c => c.id === rc.id);
+              return lc && rc.items.length > lc.items.length;
+            });
+            if (isStale) {
+              needsSyncToServer = true; // push our latest to server
+            }
+          }
+        } else if (serverComandas.length > 0) {
           setComandas(serverComandas);
           localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
           loadedComandas = serverComandas;
-        } else if (loadedComandas && loadedComandas.length > 0) {
+        } else if (loadedComandas.length > 0) {
           needsSyncToServer = true;
         }
 
@@ -427,6 +467,13 @@ export default function App() {
         if (data.notifications && Array.isArray(data.notifications)) {
           setNotifications(data.notifications);
           localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+        }
+
+        if (data.stockMovements && Array.isArray(data.stockMovements)) {
+          const cleaned = data.stockMovements.filter(
+            (m: StockMovement) => m.id !== 'MOV-1781139463153-464' && m.id !== 'MOV-1781139402298-296'
+          );
+          setStockMovements(cleaned);
         }
 
         if (data.whatsStatus) {
@@ -530,12 +577,20 @@ export default function App() {
   const saveComandasToStorage = (updatedComandas: Comanda[]) => {
     const cleanComandas = sanitizeComandas(updatedComandas) as Comanda[];
     setComandas(cleanComandas);
+    const version = Date.now();
     localStorage.setItem('salesflow_tickets_v2', JSON.stringify(cleanComandas));
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
 
+    // Prevent polling from overwriting while this POST is in flight
+    comandaSyncGuardRef.current = true;
+    comandaCooldownUntilRef.current = Date.now() + 3000;
     fetch('/api/comandas/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cleanComandas)
+    }).finally(() => {
+      comandaSyncGuardRef.current = false;
     }).catch(() => {});
   };
 
@@ -570,9 +625,14 @@ export default function App() {
     if (updatedComandas) {
       currentComas = sanitizeComandas(updatedComandas) as Comanda[];
       setComandas(currentComas);
+      const version = Date.now();
       localStorage.setItem('salesflow_tickets_v2', JSON.stringify(currentComas));
+      localStorage.setItem('salesflow_comanda_version', version.toString());
+      comandaVersionRef.current = version;
     }
 
+    comandaSyncGuardRef.current = true;
+    comandaCooldownUntilRef.current = Date.now() + 3000;
     fetch('/api/state/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -583,6 +643,8 @@ export default function App() {
         categories: categoriesRef.current,
         unidades: updatedUnidades
       })
+    }).finally(() => {
+      comandaSyncGuardRef.current = false;
     }).catch(() => {});
   };
 
@@ -673,7 +735,17 @@ export default function App() {
         }
         if (e.key === 'salesflow_tickets_v2' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setComandas(parsed);
+          if (Array.isArray(parsed)) {
+            setComandas(parsed);
+            const ver = localStorage.getItem('salesflow_comanda_version');
+            if (ver) {
+              const pv = parseInt(ver);
+              if (pv > comandaVersionRef.current) {
+                comandaVersionRef.current = pv;
+                comandaCooldownUntilRef.current = Date.now() + 3000;
+              }
+            }
+          }
         }
         if (e.key === 'salesflow_client_active_id_v2' && e.newValue) {
           setClientActiveComandaId(e.newValue);
@@ -708,24 +780,57 @@ export default function App() {
 
   // 1. Manage Stock (CRUD)
   const handleSaveProduct = (updatedProduct: Product) => {
-    const exists = products.some(p => p.id === updatedProduct.id);
+    const currentProducts = productsRef.current;
+    const exists = currentProducts.some(p => p.id === updatedProduct.id);
     let newProducts: Product[] = [];
     if (exists) {
-      newProducts = products.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+      const old = currentProducts.find(p => p.id === updatedProduct.id);
+      newProducts = currentProducts.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+      if (old && old.stock !== updatedProduct.stock) {
+        const diff = updatedProduct.stock - old.stock;
+        const movType = diff > 0 ? 'entrada' : 'saida';
+        recordStockMovement({
+          id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          productId: updatedProduct.id,
+          productName: updatedProduct.name,
+          productCode: updatedProduct.code,
+          type: movType,
+          quantity: Math.abs(diff),
+          price: updatedProduct.price,
+          totalValue: updatedProduct.price * Math.abs(diff),
+          reference: 'Ajuste manual de estoque',
+          timestamp: new Date().toISOString()
+        });
+        recordStockNotification(movType === 'entrada' ? 'entrada' : 'saida', updatedProduct.name, Math.abs(diff), 'Ajuste manual de estoque');
+      }
     } else {
-      newProducts = [...products, updatedProduct];
+      newProducts = [...currentProducts, updatedProduct];
+      recordStockMovement({
+        id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        productId: updatedProduct.id,
+        productName: updatedProduct.name,
+        productCode: updatedProduct.code,
+        type: 'entrada',
+        quantity: updatedProduct.stock,
+        price: updatedProduct.price,
+        totalValue: updatedProduct.price * updatedProduct.stock,
+        reference: 'Cadastro inicial',
+        timestamp: new Date().toISOString()
+      });
+      recordStockNotification('entrada', updatedProduct.name, updatedProduct.stock, 'Cadastro inicial');
     }
     saveProductsToStorage(newProducts);
   };
 
   const handleDeleteProduct = (productId: string) => {
-    const newProducts = products.filter(p => p.id !== productId);
+    const newProducts = productsRef.current.filter(p => p.id !== productId);
     saveProductsToStorage(newProducts);
   };
 
   // 2. Add product/item to comanda (reduces inventory stock!)
   const handleAddProductToComanda = (comandaId: string, productId: string, quantity: number, signature?: string) => {
-    const product = products.find(p => p.id === productId);
+    const currentProducts = productsRef.current;
+    const product = currentProducts.find(p => p.id === productId);
     if (!product) return;
 
     if (product.stock < quantity) {
@@ -734,7 +839,7 @@ export default function App() {
     }
 
     // Decrement from inventory database
-    const updatedProducts = products.map(p => {
+    const updatedProducts = currentProducts.map(p => {
       if (p.id === productId) {
         return { ...p, stock: p.stock - quantity };
       }
@@ -755,7 +860,8 @@ export default function App() {
       signedAt: signature ? new Date().toISOString() : undefined
     };
 
-    const updatedComandas = comandas.map(c => {
+    const currentComandas = comandasRef.current;
+    const updatedComandas = currentComandas.map(c => {
       if (c.id === comandaId) {
         return { ...c, items: [...c.items, newItem] };
       }
@@ -763,18 +869,35 @@ export default function App() {
     });
 
     saveComandasToStorage(updatedComandas);
+    recordStockMovement({
+      id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      productId: product.id,
+      productName: product.name,
+      productCode: product.code,
+      type: 'saida',
+      quantity,
+      price: product.price,
+      totalValue: product.price * quantity,
+      reference: `Comanda ${comandaId}`,
+      timestamp: new Date().toISOString()
+    });
+    recordStockNotification('saida', product.name, quantity, `Comanda ${comandaId}`);
+    const addedComanda = updatedComandas.find(c => c.id === comandaId);
+    if (addedComanda?.clientPhone) dispatchComandaUpdateWhatsApp(addedComanda, 'update');
   };
 
   // 3. Remove item from comanda (restores stock!)
   const handleRemoveItemFromComanda = (comandaId: string, itemId: string) => {
-    const targetComanda = comandas.find(c => c.id === comandaId);
+    const currentComandas = comandasRef.current;
+    const targetComanda = currentComandas.find(c => c.id === comandaId);
     if (!targetComanda) return;
 
     const targetItem = targetComanda.items.find(i => i.id === itemId);
     if (!targetItem) return;
 
     // Restore product stock first
-    const updatedProducts = products.map(p => {
+    const currentProducts = productsRef.current;
+    const updatedProducts = currentProducts.map(p => {
       if (p.id === targetItem.productId) {
         return { ...p, stock: p.stock + targetItem.quantity };
       }
@@ -783,7 +906,7 @@ export default function App() {
     saveProductsToStorage(updatedProducts);
 
     // Strip item from list
-    const updatedComandas = comandas.map(c => {
+    const updatedComandas = currentComandas.map(c => {
       if (c.id === comandaId) {
         return {
           ...c,
@@ -793,20 +916,37 @@ export default function App() {
       return c;
     });
     saveComandasToStorage(updatedComandas);
+    recordStockMovement({
+      id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      productId: targetItem.productId,
+      productName: targetItem.productName,
+      productCode: targetItem.productCode,
+      type: 'entrada',
+      quantity: targetItem.quantity,
+      price: targetItem.price,
+      totalValue: targetItem.price * targetItem.quantity,
+      reference: `Estorno Comanda ${comandaId}`,
+      timestamp: new Date().toISOString()
+    });
+    recordStockNotification('entrada', targetItem.productName, targetItem.quantity, `Estorno Comanda ${comandaId}`);
+    const removedFrom = updatedComandas.find(c => c.id === comandaId);
+    if (removedFrom?.clientPhone) dispatchComandaUpdateWhatsApp(removedFrom, 'update');
   };
 
   // 4. Update item quantity in comanda (re-evaluates stock differences)
   const handleUpdateItemQuantity = (comandaId: string, itemId: string, newQuantity: number) => {
     if (newQuantity <= 0) return;
 
-    const targetComanda = comandas.find(c => c.id === comandaId);
+    const currentComandas = comandasRef.current;
+    const targetComanda = currentComandas.find(c => c.id === comandaId);
     if (!targetComanda) return;
 
     const targetItem = targetComanda.items.find(i => i.id === itemId);
     if (!targetItem) return;
 
     const stockDifference = newQuantity - targetItem.quantity;
-    const associatedProduct = products.find(p => p.id === targetItem.productId);
+    const currentProducts = productsRef.current;
+    const associatedProduct = currentProducts.find(p => p.id === targetItem.productId);
 
     if (associatedProduct && associatedProduct.stock < stockDifference) {
       alert(`Erro: Estoque insuficiente. Restam apenas ${associatedProduct.stock} unidades de ${associatedProduct.name}.`);
@@ -815,7 +955,7 @@ export default function App() {
 
     // Adjust product inventory
     if (associatedProduct) {
-      const updatedProducts = products.map(p => {
+      const updatedProducts = currentProducts.map(p => {
         if (p.id === associatedProduct.id) {
           return { ...p, stock: p.stock - stockDifference };
         }
@@ -825,7 +965,7 @@ export default function App() {
     }
 
     // Apply change inside comanda
-    const updatedComandas = comandas.map(c => {
+    const updatedComandas = currentComandas.map(c => {
       if (c.id === comandaId) {
         return {
           ...c,
@@ -840,6 +980,24 @@ export default function App() {
       return c;
     });
     saveComandasToStorage(updatedComandas);
+    if (stockDifference !== 0) {
+      const movType = stockDifference > 0 ? 'saida' as const : 'entrada' as const;
+      recordStockMovement({
+        id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        productId: targetItem.productId,
+        productName: targetItem.productName,
+        productCode: targetItem.productCode,
+        type: movType,
+        quantity: Math.abs(stockDifference),
+        price: targetItem.price,
+        totalValue: targetItem.price * Math.abs(stockDifference),
+        reference: `Ajuste qnt Comanda ${comandaId}`,
+        timestamp: new Date().toISOString()
+      });
+      recordStockNotification(movType, targetItem.productName, Math.abs(stockDifference), `Ajuste qnt Comanda ${comandaId}`);
+    }
+    const quantityUpdated = updatedComandas.find(c => c.id === comandaId);
+    if (quantityUpdated?.clientPhone) dispatchComandaUpdateWhatsApp(quantityUpdated, 'update');
   };
 
   // helper to trigger simulated notifications (Configure um sistema de notificação automatizado)
@@ -1029,6 +1187,20 @@ export default function App() {
     setTimeout(() => {
       setActiveToasts(current => current.filter(t => t.id !== notificationId));
     }, 6000);
+  };
+
+  const dispatchComandaUpdateWhatsApp = async (comanda: Comanda, updateType: 'update' | 'close' | 'reminder' = 'update') => {
+    if (!comanda.clientPhone) return;
+    const accessUrl = getComandaAccessUrl(comanda);
+    try {
+      await fetch('/api/whatsapp/send-comanda-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comanda, updateType, accessUrl })
+      });
+    } catch (err) {
+      console.error('Falha ao notificar atualização da comanda:', err);
+    }
   };
 
   // --- AUTHENTICATION SYSTEMS (Login para Caixa / Admin) ---
@@ -1352,6 +1524,41 @@ export default function App() {
       }, 0);
   };
 
+  const recordStockMovement = (movement: StockMovement) => {
+    setStockMovements(prev => [movement, ...prev].slice(0, 1000));
+    fetch('/api/stock-movements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(movement)
+    }).catch(() => {});
+  };
+
+  const recordStockNotification = (type: 'entrada' | 'saida' | 'ajuste', productName: string, quantity: number, reference: string) => {
+    const user = session?.loginName || session?.username || 'Sistema';
+    const typeLabel = type === 'entrada' ? 'ENTRADA' : type === 'saida' ? 'SAÍDA' : 'AJUSTE';
+    const notif = {
+      id: `NOT-STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      recipient: user,
+      course: type === 'saida' ? 'Venda' : 'Estoque',
+      contact: `${quantity}x ${productName}`,
+      type: type === 'saida' ? 'Venda' : 'Sistema',
+      message: `[${typeLabel}] ${quantity}x ${productName} — ${reference}`,
+      status: 'Sucesso',
+      sender: user
+    };
+    setNotifications(prev => {
+      const updated = [notif, ...prev].slice(0, 200);
+      localStorage.setItem('salesflow_notifications', JSON.stringify(updated));
+      return updated;
+    });
+    fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(notif)
+    }).catch(() => {});
+  };
+
   // 5. Close comanda (Mark as Paid and store finished timestamp)
   const handleCloseComanda = (comandaId: string) => {
     let closedComanda: Comanda | undefined;
@@ -1366,17 +1573,23 @@ export default function App() {
     saveComandasToStorage(updatedComandas);
     if (closedComanda) {
       triggerNotification(closedComanda, 'Pago');
+      if (closedComanda.clientPhone) dispatchComandaUpdateWhatsApp(closedComanda, 'close');
     }
   };
 
   const handleToggleClosureReminder = (comandaId: string) => {
+    const target = comandas.find(c => c.id === comandaId);
+    const wasActive = !!target?.closureReminderActive;
     const updatedComandas = comandas.map(c => {
       if (c.id === comandaId) {
-        return { ...c, closureReminderActive: !c.closureReminderActive };
+        return { ...c, closureReminderActive: !wasActive };
       }
       return c;
     });
     saveComandasToStorage(updatedComandas);
+    if (!wasActive && target?.clientPhone) {
+      dispatchComandaUpdateWhatsApp(target, 'reminder');
+    }
   };
 
   // 6. Delete a comanda entirely (cancels, restoring inventory of all active unsaved products in it!)
@@ -1386,14 +1599,30 @@ export default function App() {
 
     // Restore stock for all non-paid comanda items
     if (targetComanda.status === 'Pendente') {
-      let tempProducts = [...products];
+      let tempProducts = [...productsRef.current];
       targetComanda.items.forEach(item => {
+        const prod = productsRef.current.find(p => p.id === item.productId);
         tempProducts = tempProducts.map(p => {
           if (p.id === item.productId) {
             return { ...p, stock: p.stock + item.quantity };
           }
           return p;
         });
+        if (prod) {
+          recordStockMovement({
+            id: `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            productId: prod.id,
+            productName: prod.name,
+            productCode: prod.code,
+            type: 'entrada',
+            quantity: item.quantity,
+            price: prod.price,
+            totalValue: prod.price * item.quantity,
+            reference: `Cancelamento Comanda ${comandaId}`,
+            timestamp: new Date().toISOString()
+          });
+          recordStockNotification('entrada', prod.name, item.quantity, `Cancelamento Comanda ${comandaId}`);
+        }
       });
       saveProductsToStorage(tempProducts);
     }
@@ -1469,6 +1698,7 @@ export default function App() {
     const currentTicket = comandas.find(c => c.id === comandaId);
     if (currentTicket) {
       triggerNotification(currentTicket, 'Assinado Digitalmente');
+      if (currentTicket.clientPhone) dispatchComandaUpdateWhatsApp(currentTicket, 'update');
     }
   };
 
@@ -1535,10 +1765,10 @@ export default function App() {
     switch (theme) {
       case 'gold-dark':
         return {
-          bg: 'theme-gold-dark bg-[#09090B]',
+          bg: 'theme-frz-dark bg-[#09090B]',
           headerBg: 'bg-[#121214] border-white/5',
           textColor: 'text-slate-200',
-          brandColor: 'bg-[#C5A059] hover:bg-[#B38F46] text-[#09090B]',
+          brandColor: 'bg-frz-primary hover:bg-frz-primary-hover text-[#09090B]',
           accentBorder: 'border-white/5',
           primaryText: 'text-white',
         };
@@ -1603,13 +1833,13 @@ export default function App() {
               key={toast.id}
               className="pointer-events-auto bg-slate-900/95 text-white border border-slate-800 rounded-2xl p-3.5 shadow-2xl flex gap-3.5 items-start animate-slideIn"
             >
-              <div className={`p-1.5 rounded-lg shrink-0 ${toast.type === 'email' ? 'bg-amber-500/20 text-amber-400' : 'bg-[#C5A059]/20 text-[#C5A059]'}`}>
+              <div className={`p-1.5 rounded-lg shrink-0 ${toast.type === 'email' ? 'bg-amber-500/20 text-amber-400' : 'bg-frz-primary/20 text-frz-primary'}`}>
                 {toast.type === 'email' ? <Mail className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
               </div>
               <div className="flex-1 min-w-0">
                 <span className="text-xs font-black block tracking-wide text-slate-200">{toast.title}</span>
                 <p className="text-[10px] text-slate-400 leading-normal mt-0.5">{toast.description}</p>
-                <div className="text-[9px] text-[#C5A059] font-bold tracking-widest uppercase mt-2 select-none">● Envio Automatizado Efetuado</div>
+                <div className="text-[9px] text-frz-primary font-bold tracking-widest uppercase mt-2 select-none">● Envio Automatizado Efetuado</div>
               </div>
             </div>
           ))}
@@ -1646,103 +1876,26 @@ export default function App() {
             <div className="flex-1 min-w-0">
               <span className="text-xs font-black block tracking-wide text-slate-200">{toast.title}</span>
               <p className="text-[10px] text-slate-400 leading-normal mt-0.5">{toast.description}</p>
-              <div className="text-[9px] text-[#C5A059] font-bold tracking-widest uppercase mt-2 select-none">● Envio Automatizado Efetuado</div>
+              <div className="text-[9px] text-frz-primary font-bold tracking-widest uppercase mt-2 select-none">● Envio Automatizado Efetuado</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* 1. MAIN GLOBAL STYLED HEADER */}
-      <header className={`py-4 px-6 text-white ${themeStyle.headerBg} border-b shadow-md flex flex-col md:flex-row justify-between items-center gap-4 transition duration-300`}>
-        <div className="flex items-center gap-3">
-          {renderBrandLogo(brandLogoOption)}
-          <div>
-            <h1 className="text-base font-black tracking-wide uppercase flex items-center gap-1.5 font-mono">
-              SalesFlow <span className={`text-[9px] ${theme === 'gold-dark' ? 'bg-[#C5A059] text-[#09090B]' : 'bg-slate-700 text-indigo-400'} font-bold px-1.5 py-0.5 rounded`}>PRO V4.5</span>
-            </h1>
-            <p className="text-[10px] text-slate-300">Estação de Atendimento Comercial & QR Code</p>
-          </div>
-        </div>
-
-        {/* Presentation Controls and Theme Switcher (Atrativos e Modernos presets) */}
-        <div className="flex flex-wrap items-center gap-3.5">
-
-          {/* Template presets switcher */}
-          <div className="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/50">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1.5">Template:</span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setTheme('gold-dark')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${theme === 'gold-dark' ? 'bg-[#C5A059] text-[#09090B]' : 'text-slate-300 hover:bg-slate-700'}`}
-              >
-                Sophisticated Dark 🌌
-              </button>
-              <button
-                onClick={() => setTheme('slate')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${theme === 'slate' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
-              >
-                Slate Clean
-              </button>
-              <button
-                onClick={() => setTheme('emerald')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${theme === 'emerald' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
-              >
-                Emerald Bistro
-              </button>
-              <button
-                onClick={() => setTheme('midnight')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${theme === 'midnight' ? 'bg-slate-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
-              >
-                Midnight Tech
-              </button>
-            </div>
-          </div>
-
-
-          {/* Screen Layout View Toggle (Dual screens, full admin or smartphone client) */}
-          <div className="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/50">
-            <button
-              onClick={() => setViewMode('both')}
-              className={`text-[9px] uppercase tracking-wider font-bold py-1 px-2.5 rounded-lg transition cursor-pointer flex items-center gap-1 ${viewMode === 'both' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              title="Mostrar tela de caixa e celular do cliente juntas"
-            >
-              <Layout className="w-3.5 h-3.5" />
-              Ver Lado a Lado
-            </button>
-            <button
-              onClick={() => setViewMode('admin')}
-              className={`text-[9px] uppercase tracking-wider font-bold py-1 px-2.5 rounded-lg transition cursor-pointer flex items-center gap-1 ${viewMode === 'admin' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              title="Apenas tela principal do Caixa/Administrador"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              Apenas Caixa (Admin)
-            </button>
-            <button
-              onClick={() => setViewMode('client')}
-              className={`text-[9px] uppercase tracking-wider font-bold py-1 px-2.5 rounded-lg transition cursor-pointer flex items-center gap-1 ${viewMode === 'client' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-              title="Apenas celular do cliente via QR Code"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              Simular Smartphone
-            </button>
-          </div>
-        </div>
-      </header>
-
       {/* 2. DYNAMIC LAYOUT AREA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+      <main className="flex-1 max-w-full w-full mx-auto p-3 md:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
         
         {/* LEFT COLUMN: ESTAÇÃO PRINCIPAL / ADMIN POS (Renders if mode is BOTH or ADMIN) */}
         {(viewMode === 'both' || viewMode === 'admin') && (
-          <div className={`${viewMode === 'both' ? 'lg:col-span-8' : 'lg:col-span-12'} flex flex-col gap-6`}>
+          <div className={`${viewMode === 'both' && activeAdminSubTab !== 'pdv' ? 'lg:col-span-8' : 'lg:col-span-12'} flex flex-col gap-4`}>
             
             {session === null ? (
               userForPasswordChange ? (
                 /* PASSWORD RESET ON FIRST LOGIN OVERLAY/FORM */
                 <div id="first-access-password-change" className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full mx-auto my-12 shadow-2xl space-y-6 animate-slideIn text-left">
                   <div className="text-center">
-                    <div className="relative w-14 h-14 bg-[#C5A059]/10 border border-[#C5A059]/20 text-[#C5A059] rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
-                      <Key className="w-7 h-7 text-[#C5A059]" />
+                    <div className="relative w-14 h-14 bg-frz-primary/10 border border-frz-primary/20 text-frz-primary rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+                      <Key className="w-7 h-7 text-frz-primary" />
                     </div>
                     <h2 className="text-xl font-extrabold text-white font-sans">Cadastrar Senha Definitiva</h2>
                     <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed font-semibold">
@@ -1773,7 +1926,7 @@ export default function App() {
                         value={firstAccessNewPassword}
                         onChange={(e) => setFirstAccessNewPassword(e.target.value)}
                         placeholder="Mínimo de 3 caracteres"
-                        className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-[#C5A059]"
+                        className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary"
                       />
                     </div>
 
@@ -1785,7 +1938,7 @@ export default function App() {
                         value={firstAccessNewPasswordConfirm}
                         onChange={(e) => setFirstAccessNewPasswordConfirm(e.target.value)}
                         placeholder="Repita a nova senha definitiva"
-                        className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-[#C5A059]"
+                        className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary"
                       />
                     </div>
 
@@ -1796,10 +1949,10 @@ export default function App() {
                         className="flex-1 py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs rounded-xl transition cursor-pointer"
                       >
                         Cancelar
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-3 bg-[#C5A059] hover:bg-[#B38F46] text-[#09090B] font-extrabold text-xs rounded-xl transition cursor-pointer"
+                        </button>
+                          <button
+                          type="submit"
+                        className="flex-1 py-3 bg-frz-primary hover:bg-frz-primary-hover text-[#09090B] font-extrabold text-xs rounded-xl transition cursor-pointer"
                       >
                         Ativar & Entrar
                       </button>
@@ -1832,7 +1985,7 @@ export default function App() {
                       placeholder="Ex: admin ou caixa"
                       value={loginUsername}
                       onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-[#C5A059] font-sans"
+                      className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary font-sans"
                     />
                   </div>
 
@@ -1844,13 +1997,13 @@ export default function App() {
                       placeholder="Senha numérica"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-[#C5A059]"
+                      className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary"
                     />
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full py-3 bg-[#C5A059] hover:bg-[#B38F46] text-[#09090B] font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow"
+                    className="w-full py-3 bg-frz-primary hover:bg-frz-primary-hover text-[#09090B] font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow"
                   >
                     <LogIn className="w-4 h-4" />
                     Entrar no Sistema
@@ -1870,7 +2023,7 @@ export default function App() {
               /* ACTIVE POS WORKSPACE */
               <>
                 {/* Active Session strip - displaying roles, cashier status, shift triggers */}
-                <div className="bg-slate-800/45 p-4 rounded-3xl border border-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="bg-slate-800/45 p-3 rounded-2xl border border-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-slate-700 flex items-center justify-center text-slate-300">
                       <Users className="w-4 h-4" />
@@ -1886,14 +2039,14 @@ export default function App() {
 
                   {/* Cashier Operating Branch Select Option */}
                   <div className="flex items-center gap-2.5 bg-slate-900/60 hover:bg-slate-900/85 border border-slate-700/40 p-2.5 px-3.5 rounded-2xl transition duration-150 shadow-inner w-full sm:w-auto">
-                    <MapPin className="w-3.5 h-3.5 text-[#C5A059] shrink-0" />
+                    <MapPin className="w-3.5 h-3.5 text-frz-primary shrink-0" />
                     <div className="text-left">
                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-0.5">Unidade Ativa do Caixa</span>
                       <select
                         id="cashier-operating-unit-select"
                         value={operatingUnit}
                         onChange={(e) => handleUpdateOperatingUnit(e.target.value)}
-                        className="bg-transparent border-none text-xs font-black text-[#C5A059] focus:outline-none cursor-pointer pr-5 font-mono select-none"
+                        className="bg-transparent border-none text-xs font-black text-frz-primary focus:outline-none cursor-pointer pr-5 font-mono select-none"
                         style={{ colorScheme: 'dark' }}
                       >
                         {unidades.map(u => (
@@ -1915,7 +2068,7 @@ export default function App() {
                             setCloseActualCash(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0));
                             setIsShiftCloseModalOpen(true);
                           }}
-                          className="bg-[#C5A059] hover:bg-[#B38F4B] text-black px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 cursor-pointer shadow-sm"
+                          className="bg-frz-primary hover:bg-frz-primary-hover text-black px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 cursor-pointer shadow-sm"
                         >
                           Fechar Caixa
                         </button>
@@ -1931,21 +2084,36 @@ export default function App() {
                             setOpenInitialBalance(150);
                             setIsShiftOpenModalOpen(true);
                           }}
-                          className="bg-[#C5A059] hover:bg-[#B38F4B] text-black px-4 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 shadow-sm cursor-pointer"
+                          className="bg-frz-primary hover:bg-frz-primary-hover text-black px-4 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 shadow-sm cursor-pointer"
                         >
                           Abrir Caixa
                         </button>
                       </div>
                     )}
 
-                    <button
-                      onClick={handleFactoryReset}
-                      className="p-2 bg-[#1E293B] hover:bg-amber-600/25 border border-amber-500/20 hover:border-amber-500/50 text-amber-500 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-[10px] uppercase font-black tracking-wide font-mono"
-                      title="Zerar dados de teste para iniciar limpo"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-amber-500" />
-                      Zerar Sistema
-                    </button>
+                    <div className="flex items-center gap-1 bg-slate-800/60 p-1 rounded-xl border border-slate-700/30 shrink-0">
+                      <button
+                        onClick={() => setViewMode('both')}
+                        className={`p-1.5 rounded-lg transition cursor-pointer ${viewMode === 'both' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        title="Mostrar tela de caixa e celular do cliente juntas"
+                      >
+                        <Layout className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('admin')}
+                        className={`p-1.5 rounded-lg transition cursor-pointer ${viewMode === 'admin' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        title="Apenas tela principal do Caixa/Administrador"
+                      >
+                        <Building2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('client')}
+                        className={`p-1.5 rounded-lg transition cursor-pointer ${viewMode === 'client' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                        title="Apenas celular do cliente via QR Code"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     <button
                       onClick={handleLogout}
@@ -1957,45 +2125,203 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Sub Tab selection with 3 elements now: Comandas, Estoque, Caixa & Notificacoes */}
-                <div className="flex bg-white/60 p-1 rounded-2xl border border-slate-200 w-full max-w-2xl overflow-x-auto gap-1">
-                  <button
-                    onClick={() => {
-                      setActiveAdminSubTab('comandas');
-                      setSelectedComandaId(null);
-                    }}
-                    className={`flex-1 min-w-[130px] py-2 px-3 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${activeAdminSubTab === 'comandas' ? 'bg-[#C5A059] text-black shadow-sm' : 'text-slate-700 hover:text-slate-950 hover:bg-slate-200/50'}`}
-                  >
-                    <Layers className="w-4 h-4" />
-                    Comandas Ativas ({comandas.filter(c => c.status === 'Pendente').length})
-                  </button>
-                  <button
-                    onClick={() => setActiveAdminSubTab('estoque')}
-                    className={`flex-1 min-w-[130px] py-2 px-3 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${activeAdminSubTab === 'estoque' ? 'bg-[#C5A059] text-black shadow-sm' : 'text-slate-700 hover:text-slate-950 hover:bg-slate-200/50'}`}
-                  >
-                    <Package className="w-4 h-4" />
-                    Estoque & Produtos ({products.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveAdminSubTab('caixa_notificacoes')}
-                    className={`flex-1 min-w-[130px]  py-2 px-3 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${activeAdminSubTab === 'caixa_notificacoes' ? 'bg-[#C5A059] text-black shadow-sm' : 'text-slate-700 hover:text-slate-950 hover:bg-slate-200/50'}`}
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    Caixa & Notificações
-                  </button>
-                  {session?.role === 'admin' && (
+                {/* Sidebar + Content Layout */}
+                <div className="flex flex-col xl:flex-row gap-3 items-stretch">
+                  {/* Sidebar */}
+                  <aside className={`bg-[#111827] border border-slate-800/80 rounded-2xl shadow-frz-card shrink-0 overflow-hidden text-white flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] transition-all duration-300 ${sidebarCollapsed ? 'w-[68px]' : 'w-full xl:w-[232px]'}`}>
+                    {/* Header - click to toggle collapse */}
                     <button
-                      onClick={() => setActiveAdminSubTab('acessos')}
-                      className={`flex-1 min-w-[130px] py-2 px-3 text-xs font-extrabold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer ${activeAdminSubTab === 'acessos' ? 'bg-[#C5A059] text-black shadow-sm' : 'text-slate-700 hover:text-slate-950 hover:bg-slate-200/50'}`}
+                      onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                      className="p-3.5 border-b border-slate-800/80 flex items-center gap-3 w-full hover:bg-white/5 transition cursor-pointer"
                     >
-                      <Users className="w-4 h-4" />
-                      Controle de Acessos ({users.length})
+                      <div className="w-9 h-9 rounded-xl bg-frz-primary text-white flex items-center justify-center shrink-0 shadow-sm">
+                        <Layout className="w-5 h-5" />
+                      </div>
+                      {!sidebarCollapsed && (
+                        <div className="min-w-0 text-left">
+                          <div className="text-[13px] font-black tracking-tight truncate">SalesFlow POS</div>
+                          <div className="text-[10px] text-slate-400 font-semibold truncate">Grupo FRZ</div>
+                        </div>
+                      )}
                     </button>
-                  )}
-                </div>
+
+                    <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+                      <div className="space-y-1">
+                        {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Operação</span>}
+                        <button
+                          onClick={() => {
+                            setActiveAdminSubTab('comandas');
+                            setSelectedComandaId(null);
+                            if (sidebarCollapsed) setSidebarCollapsed(false);
+                          }}
+                          className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            activeAdminSubTab === 'comandas'
+                              ? 'bg-frz-primary/15 text-white'
+                              : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                          }`}
+                          title={sidebarCollapsed ? 'Comandas' : undefined}
+                        >
+                          <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                            <Layers className="w-4 h-4" />
+                          </span>
+                          {!sidebarCollapsed && (
+                            <span className="text-left min-w-0">
+                              <span className="block truncate">Comandas</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">{comandas.filter(c => c.status === 'Pendente').length} ativas</span>
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveAdminSubTab('pdv');
+                            setSelectedComandaId(null);
+                            if (sidebarCollapsed) setSidebarCollapsed(false);
+                          }}
+                          className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            !sidebarCollapsed ? '' : ''
+                          } text-slate-100 hover:bg-white/5 hover:text-white`}
+                          title={sidebarCollapsed ? 'PDV' : undefined}
+                        >
+                          <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0`}>
+                            <CreditCard className="w-4 h-4" />
+                          </span>
+                          {!sidebarCollapsed && (
+                            <span className="text-left min-w-0">
+                              <span className="block truncate">PDV</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">Nova Venda</span>
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveAdminSubTab('caixa_notificacoes');
+                            if (sidebarCollapsed) setSidebarCollapsed(false);
+                          }}
+                          className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            activeAdminSubTab === 'caixa_notificacoes'
+                              ? 'bg-frz-primary/15 text-white'
+                              : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                          }`}
+                          title={sidebarCollapsed ? 'Caixa' : undefined}
+                        >
+                          <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                            <DollarSign className="w-4 h-4" />
+                          </span>
+                          {!sidebarCollapsed && (
+                            <span className="text-left min-w-0">
+                              <span className="block truncate">Caixa</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">Notificações</span>
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Compras</span>}
+                        <button
+                          onClick={() => {
+                            setActiveAdminSubTab('estoque');
+                            if (sidebarCollapsed) setSidebarCollapsed(false);
+                          }}
+                          className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            activeAdminSubTab === 'estoque'
+                              ? 'bg-frz-primary/15 text-white'
+                              : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                          }`}
+                          title={sidebarCollapsed ? 'Estoque' : undefined}
+                        >
+                          <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                            <Package className="w-4 h-4" />
+                          </span>
+                          {!sidebarCollapsed && (
+                            <span className="text-left min-w-0">
+                              <span className="block truncate">Estoque e Produtos</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">{products.length} produtos</span>
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveAdminSubTab('fluxo');
+                            if (sidebarCollapsed) setSidebarCollapsed(false);
+                          }}
+                          className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            activeAdminSubTab === 'fluxo'
+                              ? 'bg-frz-primary/15 text-white'
+                              : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                          }`}
+                          title={sidebarCollapsed ? 'Fluxo' : undefined}
+                        >
+                          <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                            <TrendingUp className="w-4 h-4" />
+                          </span>
+                          {!sidebarCollapsed && (
+                            <span className="text-left min-w-0">
+                              <span className="block truncate">Fluxo de Vendas</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">Vendas/Estoque</span>
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {session?.role === 'admin' && (
+                        <div className="space-y-1">
+                          {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Administração</span>}
+                          <button
+                            onClick={() => {
+                              setActiveAdminSubTab('acessos');
+                              if (sidebarCollapsed) setSidebarCollapsed(false);
+                            }}
+                            className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                              activeAdminSubTab === 'acessos'
+                                ? 'bg-frz-primary/15 text-white'
+                                : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                            }`}
+                            title={sidebarCollapsed ? 'Acessos' : undefined}
+                          >
+                            <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                              <Users className="w-4 h-4" />
+                            </span>
+                            {!sidebarCollapsed && (
+                              <span className="text-left min-w-0">
+                                <span className="block truncate">Controle de Acessos</span>
+                                <span className="block text-[9px] text-slate-400 font-semibold">{users.length} usuários</span>
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </nav>
+
+                    <div className="border-t border-slate-800/80 p-3 space-y-3">
+                      {!sidebarCollapsed && (
+                        <button
+                          onClick={() => setTheme(theme === 'gold-dark' ? 'slate' : 'gold-dark')}
+                          className="w-full flex items-center gap-2 text-[10px] font-semibold text-slate-300 hover:text-white transition cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-blue-300" />
+                          {theme === 'gold-dark' ? 'Tema claro' : 'Tema escuro'}
+                        </button>
+                      )}
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-frz-primary text-white flex items-center justify-center text-sm font-black shrink-0">
+                          {session.username?.charAt(0).toUpperCase() || 'A'}
+                        </div>
+                        {!sidebarCollapsed && (
+                          <div className="min-w-0">
+                            <div className="text-xs font-black truncate">{session.username === 'admin' ? 'Administrador' : session.username}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{session.role === 'admin' ? 'admin@salesflow.frz' : 'caixa@salesflow.frz'}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </aside>
+
+                  {/* Content area */}
+                  <div className="flex-1 min-w-0">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
-                {!activeShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && (
+                {!activeShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'pdv' && (
                   <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-2xl text-xs flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
                     <div className="flex gap-2 items-start">
                       <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
@@ -2006,7 +2332,7 @@ export default function App() {
                     </div>
                     <button
                       onClick={() => setIsShiftOpenModalOpen(true)}
-                      className="bg-[#C5A059] hover:bg-[#B38F46] text-black px-3.5 py-1.5 rounded-xl font-bold font-mono text-[10px] uppercase cursor-pointer transition shrink-0"
+                      className="bg-frz-primary hover:bg-frz-primary-hover text-black px-3.5 py-1.5 rounded-xl font-bold font-mono text-[10px] uppercase cursor-pointer transition shrink-0"
                     >
                       Abertura de Caixa 🔑
                     </button>
@@ -2014,13 +2340,38 @@ export default function App() {
                 )}
 
                 {/* Sub-Tab rendering logic */}
-                {activeAdminSubTab === 'estoque' ? (
+                {activeAdminSubTab === 'pdv' ? (
+                  <DirectPOSView
+                    products={products}
+                    operatingUnit={operatingUnit}
+                    setStockMovements={setStockMovements}
+                    setProducts={setProducts}
+                    stockMovements={stockMovements}
+                    onStockNotification={recordStockNotification}
+                    verifyRefundLogin={(login, password) => {
+                      const user = users.find(u =>
+                        u.username.toLowerCase() === login.toLowerCase() &&
+                        u.password === password &&
+                        u.role === 'admin' &&
+                        u.status === 'active'
+                      );
+                      return !!user;
+                    }}
+                  />
+                ) : activeAdminSubTab === 'estoque' ? (
                   <StockManagement
                     products={products}
                     onSaveProduct={handleSaveProduct}
                     onDeleteProduct={handleDeleteProduct}
                     categories={categories}
                     onSaveCategories={handleSaveCategories}
+                  />
+                ) : activeAdminSubTab === 'fluxo' ? (
+                  <FluxoDashboard
+                    products={products}
+                    comandas={comandas}
+                    stockMovements={stockMovements}
+                    setStockMovements={setStockMovements}
                   />
                 ) : activeAdminSubTab === 'acessos' ? (
                   <AccessManagement
@@ -2030,6 +2381,21 @@ export default function App() {
                     currentUserSessionId={session?.id}
                     onSimulateInvite={(code) => {
                       setActiveInviteCode(code);
+                    }}
+                    onResetSystem={() => {
+                      const emptyProducts: Product[] = [];
+                      const emptyComandas: Comanda[] = [];
+                      const emptyNotifications: any[] = [];
+                      const emptyStockMovements: StockMovement[] = [];
+                      saveProductsToStorage(emptyProducts);
+                      saveComandasToStorage(emptyComandas);
+                      setNotifications(emptyNotifications);
+                      setStockMovements(emptyStockMovements);
+                      localStorage.setItem('salesflow_products', JSON.stringify(emptyProducts));
+                      localStorage.setItem('salesflow_comandas', JSON.stringify(emptyComandas));
+                      localStorage.setItem('salesflow_notifications', JSON.stringify(emptyNotifications));
+                      localStorage.setItem('salesflow_stockMovements', JSON.stringify(emptyStockMovements));
+                      alert('Sistema zerado com sucesso! Produtos, comandas, estoque e notificações foram removidos.');
                     }}
                   />
                 ) : activeAdminSubTab === 'caixa_notificacoes' ? (
@@ -2059,9 +2425,9 @@ export default function App() {
                                   <span className="text-[9px] text-slate-400 block font-semibold">Vendas Caixa</span>
                                   <span className="text-xs font-black text-emerald-600 font-mono">+R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
                                 </div>
-                                <div className="bg-[#C5A059]/10 p-2 text-center rounded-xl border border-slate-100">
+                                <div className="bg-frz-primary/10 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Estimado</span>
-                                  <span className="text-xs font-black text-[#C5A059] font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-frz-primary font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
                                 </div>
                               </div>
                               
@@ -2127,7 +2493,7 @@ export default function App() {
                                       {diff === 0 ? (
                                         <span className="text-[9px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">Sem Divergência</span>
                                       ) : (
-                                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${diff > 0 ? 'bg-[#C5A059]/10 text-[#C5A059]' : 'bg-rose-50 text-rose-600'}`}>
+                                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${diff > 0 ? 'bg-frz-primary/10 text-frz-primary' : 'bg-rose-50 text-rose-600'}`}>
                                           Contagem: {diff > 0 ? '+' : ''}R$ {Number(diff || 0).toFixed(2)}
                                         </span>
                                       )}
@@ -2141,326 +2507,11 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* SYSTEM CONFIG: SENDING WHATSAPP SETTINGS */}
-                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-[#C5A059]/10 pb-4 mb-4.5">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-xl">
-                            <MessageSquare className="w-5 h-5 text-emerald-600" />
-                          </div>
-                          <div className="text-left">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block font-mono">Canais de Integração</span>
-                            <h3 className="text-sm font-extrabold text-slate-800 font-sans">Gateway de WhatsApp do Caixa</h3>
-                          </div>
-                        </div>
 
-                        {/* Connection status badge */}
-                        <div className="flex items-center self-start sm:self-center">
-                          {whatsConnectionStatus === 'connected' ? (
-                            <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-ping"></span>
-                              🟢 CONECTADO
-                            </span>
-                          ) : whatsConnectionStatus === 'connecting' ? (
-                            <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full animate-pulse">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
-                              ⏳ ESCANEANDO...
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block"></span>
-                              🔴 DESCONECTADO
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        {whatsConnectionStatus === 'disconnected' && (
-                          <div className="space-y-4 text-left">
-                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Conecte sua conta do WhatsApp para que o sistema SalesFlow possa despachar notificações automáticas de status de comanda, faturamentos e assinaturas digitais do caixa. Selecione o método de pareamento preferido abaixo:
-                            </p>
-
-                            {/* Method Selector Tabs */}
-                            <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200/60 max-w-md">
-                              <button
-                                type="button"
-                                onClick={() => setWhatsConnectionMethod('qrcode')}
-                                className={`flex-1 py-2 px-3 text-[11px] font-bold rounded-lg transition-all cursor-pointer text-center ${
-                                  whatsConnectionMethod === 'qrcode'
-                                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                                    : 'text-slate-500 hover:text-slate-800'
-                                }`}
-                              >
-                                🔗 Via Código QR (Sem Digitar)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setWhatsConnectionMethod('manual')}
-                                className={`flex-1 py-2 px-3 text-[11px] font-bold rounded-lg transition-all cursor-pointer text-center ${
-                                  whatsConnectionMethod === 'manual'
-                                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/40'
-                                    : 'text-slate-500 hover:text-slate-800'
-                                }`}
-                              >
-                                ✍️ Digitar Número Manualmente
-                              </button>
-                            </div>
-
-                            {whatsConnectionMethod === 'qrcode' ? (
-                              <div className="space-y-3.5 pt-1">
-                                <p className="text-[11px] text-slate-500 leading-relaxed">
-                                  Gere o QR Code de autenticação para escanear com seu celular. O sistema SalesFlow identificará seu remetente automaticamente após a leitura, sem necessidade de digitar nenhum número anteriormente.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setWhatsConnectionStatus('connecting');
-                                    localStorage.setItem('salesflow_whats_status', 'connecting');
-
-                                    // Trigger server connection simulation (no number sent; server auto-generates scanning cell details upon connection)
-                                    fetch('/api/whatsapp/connect', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({})
-                                    }).catch(err => console.error("Error setting up server QR connection:", err));
-                                  }}
-                                  className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition shadow-sm uppercase tracking-wider font-mono cursor-pointer flex items-center justify-center gap-1.5"
-                                >
-                                  <Key className="w-3.5 h-3.5 text-white animate-pulse" />
-                                  Gerar QR Code de Pareamento 🔗
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="space-y-4 pt-1">
-                                <p className="text-[11px] text-slate-500 leading-relaxed">
-                                  Preencha o número do transmissor abaixo para ativar instantaneamente o canal de disparos de WhatsApp sem precisar ler nenhum código de barras na tela do seu celular.
-                                </p>
-
-                                <div className="flex flex-col sm:flex-row gap-3 items-end">
-                                  <div className="flex-grow w-full">
-                                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-1.5 font-mono">Número do WhatsApp Remetente</label>
-                                    <div className="relative">
-                                      <span className="absolute left-3.5 top-2.5 text-xs font-semibold text-slate-400">+</span>
-                                      <input
-                                        type="text"
-                                        value={systemWhatsNumber.replace(/^\+/, '')}
-                                        onChange={(e) => {
-                                          const val = e.target.value.replace(/[^\d\s()+-]/g, '');
-                                          setSystemWhatsNumber(val ? '+' + val : '');
-                                          localStorage.setItem('salesflow_system_whats_number', val ? '+' + val : '');
-                                        }}
-                                        className="w-full pl-7 pr-3.5 py-2 text-xs font-bold bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl transition font-mono text-slate-800"
-                                        placeholder="Ex: 5511999999999"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!systemWhatsNumber || systemWhatsNumber.length < 8) {
-                                        alert("Por favor, digite um número de WhatsApp válido.");
-                                        return;
-                                      }
-                                      setWhatsConnectionStatus('connected');
-                                      localStorage.setItem('salesflow_whats_status', 'connected');
-
-                                      fetch('/api/whatsapp/config', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ number: systemWhatsNumber })
-                                      }).then(() => {
-                                        fetch('/api/whatsapp/force-connect', { method: 'POST' })
-                                          .catch(err => console.error("Error setting up manual session:", err));
-                                      }).catch(err => console.error("Error saving manual config:", err));
-                                    }}
-                                    className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition shadow-sm uppercase tracking-wider font-mono cursor-pointer flex items-center justify-center gap-1.5"
-                                  >
-                                    <Check className="w-3.5 h-3.5 text-white" />
-                                    Ativar Canal por Número ⚡
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {whatsConnectionStatus === 'connecting' && (
-                          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex flex-col items-center text-center space-y-4">
-                            <div className="max-w-[285px]">
-                              <span className="text-[10px] font-black tracking-wider text-[#C5A059] uppercase block mb-1">Pareamento WhatsApp Web</span>
-                              <h4 className="text-xs font-extrabold text-slate-800 font-sans">Escaneie o QR Code</h4>
-                              <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                                Abra o WhatsApp no smartphone, vá em <strong className="text-slate-600 font-bold">Aparelhos Conectados &gt; Conectar um Aparelho</strong>, e mire na imagem abaixo:
-                              </p>
-                            </div>
-
-                            {/* Dynamic generated scanner-ready QR code targeting api.qrserver */}
-                            <div className="p-4 bg-white rounded-2xl border border-slate-100 shadow-xs flex flex-col items-center">
-                              <img
-                                src={`https://api.qrserver.com/v1/create-qr-code/?size=180&data=${encodeURIComponent(`salesflow-session-auth-${systemWhatsNumber.replace(/\D/g, '')}-${Date.now()}`)}`}
-                                alt="WhatsApp QR Setup Code"
-                                width={180}
-                                height={180}
-                                className="rounded-lg object-contain bg-white"
-                                referrerPolicy="no-referrer"
-                              />
-                              <div className="mt-3.5 flex items-center gap-1.5 text-[9px] text-amber-600 bg-amber-50 px-3 py-1 rounded-full font-black uppercase tracking-wider animate-pulse font-mono">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"></span>
-                                Aguardando leitura do QR no celular...
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 w-full max-w-sm">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setWhatsConnectionStatus('disconnected');
-                                  localStorage.setItem('salesflow_whats_status', 'disconnected');
-
-                                  fetch('/api/whatsapp/disconnect', { method: 'POST' })
-                                    .catch(err => console.error("Error canceling server session:", err));
-                                }}
-                                className="flex-1 py-2 border border-slate-200 text-slate-500 hover:bg-slate-100 rounded-xl text-[10px] font-extrabold uppercase transition cursor-pointer font-sans"
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setWhatsConnectionStatus('connected');
-                                  localStorage.setItem('salesflow_whats_status', 'connected');
-                                  
-                                  fetch('/api/whatsapp/force-connect', { method: 'POST' })
-                                    .catch(err => console.error("Error forcing server session:", err));
-
-                                  const customToastId = `toast-whats-forced-${Date.now()}`;
-                                  setActiveToasts(prev => [
-                                    ...prev,
-                                    {
-                                      id: customToastId,
-                                      title: "🟢 WhatsApp Pareado!",
-                                      description: `Número ${systemWhatsNumber} conectado via simulação instantânea de leitura.`,
-                                      type: 'email'
-                                    }
-                                  ]);
-                                  setTimeout(() => {
-                                    setActiveToasts(current => current.filter(t => t.id !== customToastId));
-                                  }, 4000);
-                                }}
-                                className="flex-grow flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-extrabold uppercase transition cursor-pointer shadow-sm font-sans"
-                              >
-                                Autoconectar Instantâneo 📱
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {whatsConnectionStatus === 'connected' && (
-                          <div className="bg-emerald-500/[0.02] p-5 rounded-2xl border border-emerald-500/10 flex flex-col md:flex-row justify-between items-center gap-4 text-left">
-                            <div className="flex gap-3.5 items-start">
-                              <div className="p-3 bg-emerald-500 text-white rounded-xl shadow-inner relative">
-                                <MessageSquare className="w-5 h-5 text-white" />
-                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full flex items-center justify-center border border-emerald-100 shadow-sm">
-                                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
-                                </span>
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-extrabold text-slate-800 font-sans flex items-center gap-1.5">
-                                  Telefone Pareado & Ativo
-                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-black font-mono">CONEXÃO WEB</span>
-                                </h4>
-                                <p className="text-[11px] font-mono font-black text-slate-600 mt-0.5">{systemWhatsNumber}</p>
-                                <div className="text-[10px] text-slate-400 mt-2.5 space-y-0.5">
-                                  <p>• Dispositivo: <strong className="text-slate-600 font-bold">Node-Agent WhatsApp API Session (Estável)</strong></p>
-                                  <p>• Logs Ativos: <strong className="text-slate-600 font-bold">Pronto para despachos</strong></p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row md:flex-col gap-2 w-full md:w-auto shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  // Send test WhatsApp dispatch and store on DB
-                                  const testNotif = {
-                                    id: `W-TEST-${Math.floor(1000 + Math.random() * 9000)}`,
-                                    timestamp: new Date().toISOString(),
-                                    recipient: "Operador de Canal",
-                                    course: "Autoteste Caixa",
-                                    contact: systemWhatsNumber,
-                                    type: 'WhatsApp',
-                                    message: `*SalesFlow Canal Ativo* ✅\nEste é um disparo manual de autodiagnóstico. Seu transmissor do número ${systemWhatsNumber} está respondendo com sucesso!`,
-                                    status: 'Sucesso',
-                                    sender: systemWhatsNumber
-                                  };
-                                  
-                                  fetch('/api/notifications', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(testNotif)
-                                  }).catch(() => {});
-
-                                  const diagToastId = `toast-diag-${Date.now()}`;
-                                  setActiveToasts(prev => [
-                                    ...prev,
-                                    {
-                                      id: diagToastId,
-                                      title: "🚀 Conexão Confirmada",
-                                      description: "Disparo de autoteste efetuado em logs com sucesso!",
-                                      type: 'email'
-                                    }
-                                  ]);
-                                  setTimeout(() => {
-                                    setActiveToasts(current => current.filter(t => t.id !== diagToastId));
-                                  }, 4000);
-                                }}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-extrabold uppercase transition tracking-wider font-mono cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                              >
-                                <Send className="w-3.5 h-3.5 text-white" />
-                                Testar Canal
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm("Deseja desconectar e deslogar esta conta de WhatsApp do sistema de cobrança?")) {
-                                    setWhatsConnectionStatus('disconnected');
-                                    localStorage.setItem('salesflow_whats_status', 'disconnected');
-
-                                    fetch('/api/whatsapp/disconnect', { method: 'POST' })
-                                      .catch(err => console.error("Error disconnecting server session:", err));
-
-                                    const logoutToastId = `toast-logout-${Date.now()}`;
-                                    setActiveToasts(prev => [
-                                      ...prev,
-                                      {
-                                        id: logoutToastId,
-                                        title: "🔴 WhatsApp Desconectado",
-                                        description: "O canal de mensageria foi despareado com sucesso.",
-                                        type: 'sms'
-                                      }
-                                    ]);
-                                    setTimeout(() => {
-                                      setActiveToasts(current => current.filter(t => t.id !== logoutToastId));
-                                    }, 4000);
-                                  }
-                                }}
-                                className="px-4 py-2 text-rose-600 border border-rose-200 hover:bg-rose-50 rounded-xl text-[10px] font-extrabold uppercase transition tracking-wider font-mono cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                Desconectar Canal 🔌
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
                     {/* CLOUD INTEGRATION: SUPABASE CLOUD DATABASE CONFIGURATION */}
                     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-[#C5A059]/10 pb-4">
+                      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-frz-primary/10 pb-4">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-xl">
                             <Layers className="w-5 h-5 text-indigo-600" />
@@ -2629,8 +2680,8 @@ export default function App() {
                         {/* Export & deployment checklist details */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex gap-2.5">
-                            <div className="p-1.5 bg-[#C5A059]/10 text-[#C5A059] rounded-lg h-fit">
-                              <Check className="w-3.5 h-3.5 text-[#C5A059]" />
+                            <div className="p-1.5 bg-frz-primary/10 text-frz-primary rounded-lg h-fit">
+                              <Check className="w-3.5 h-3.5 text-frz-primary" />
                             </div>
                             <div className="text-left text-[11px]">
                               <span className="font-extrabold text-slate-800 block">Esquema SQL Preparado</span>
@@ -2639,8 +2690,8 @@ export default function App() {
                           </div>
 
                           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex gap-2.5">
-                            <div className="p-1.5 bg-[#C5A059]/10 text-[#C5A059] rounded-lg h-fit">
-                              <Check className="w-3.5 h-3.5 text-[#C5A059]" />
+                            <div className="p-1.5 bg-frz-primary/10 text-frz-primary rounded-lg h-fit">
+                              <Check className="w-3.5 h-3.5 text-frz-primary" />
                             </div>
                             <div className="text-left text-[11px]">
                               <span className="font-extrabold text-slate-800 block">Pronto para o Vercel</span>
@@ -2720,7 +2771,6 @@ export default function App() {
                   // Active comandas display
                   <div className="flex flex-col gap-6">
                     {selectedComanda ? (
-                      /* Expanded Single Ticket view with print receipt & add items options */
                       <ComandaDetailView
                         comanda={selectedComanda}
                         products={products}
@@ -2729,12 +2779,11 @@ export default function App() {
                         onUpdateItemQuantity={handleUpdateItemQuantity}
                         onCloseComanda={handleCloseComanda}
                         onDeleteComanda={handleDeleteComanda}
-                        onToggleClosureReminder={handleToggleClosureReminder}
-                        onOpenSimulatorForComanda={(cid) => {
-                          setClientActiveComandaId(cid);
-                          localStorage.setItem('salesflow_client_active_id_v2', cid);
-                          setViewMode('both'); // split layout so they see both sync!
+                        onOpenSimulatorForComanda={(comandaId) => {
+                          setClientActiveComandaId(comandaId);
+                          setViewMode('both');
                         }}
+                        onToggleClosureReminder={handleToggleClosureReminder}
                         onBackToList={() => setSelectedComandaId(null)}
                       />
                     ) : (
@@ -2751,6 +2800,8 @@ export default function App() {
                     )}
                   </div>
                 )}
+                </div>
+                </div>
               </>
             )}
           </div>
@@ -2760,6 +2811,19 @@ export default function App() {
         {(viewMode === 'both' || viewMode === 'client') && (
           <div className={`${viewMode === 'both' ? 'lg:col-span-4' : 'lg:col-span-12'} flex flex-col items-center justify-start`}>
             
+            {/* Return button when in client-only mode */}
+            {viewMode === 'client' && (
+              <div className="w-full max-w-md mb-4">
+                <button
+                  onClick={() => setViewMode('both')}
+                  className="w-full py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-black shadow-sm cursor-pointer transition flex items-center justify-center gap-2"
+                >
+                  <Layout className="w-4 h-4" />
+                  Voltar para Caixa + Celular
+                </button>
+              </div>
+            )}
+
             {/* Header info label explaining simulator features */}
             {viewMode === 'both' && (
               <div className="text-center mb-3 text-slate-400 scale-[0.95] max-w-[340px]">
@@ -2912,7 +2976,7 @@ export default function App() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
                   >
                     <Check className="w-3.5 h-3.5 text-black" />
                     Confirmar e Sair
@@ -2993,7 +3057,7 @@ export default function App() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
                   >
                     <Check className="w-3.5 h-3.5 text-black" />
                     Confirmar e Sair
@@ -3041,7 +3105,7 @@ export default function App() {
                 <hr className="border-slate-200 border-dashed my-1" />
                 <div className="flex justify-between font-extrabold text-slate-900">
                   <span>Valor Calculado Estimado:</span>
-                  <span className="text-[#C5A059] font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
+                  <span className="text-frz-primary font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -3080,7 +3144,7 @@ export default function App() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-[#C5A059] hover:bg-[#B38F4B] text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
                   >
                     <Check className="w-3.5 h-3.5 text-black" />
                     Confirmar e Sair

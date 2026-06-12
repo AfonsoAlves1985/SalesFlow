@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Comanda, Product, OrderedItem } from '../types';
-import { Calendar, Trash2, Edit, Printer, Plus, Check, QrCode, Signature, ShieldCheck, RefreshCw, X, Bell, MessageSquare } from 'lucide-react';
+import { Calendar, Trash2, Edit, Printer, Plus, Check, QrCode, Signature, ShieldCheck, RefreshCw, X, Bell, MessageSquare, Image as ImageIcon } from 'lucide-react';
 import QRCodeGenerator from './QRCodeGenerator';
 
 interface ComandaDetailViewProps {
@@ -127,7 +127,7 @@ export default function ComandaDetailView({
         {onBackToList && (
           <button 
             onClick={onBackToList}
-            className="sm:hidden text-xs text-black font-extrabold px-3 py-1 bg-[#C5A059] hover:bg-[#B38F4B] rounded-lg transition shadow-sm"
+            className="sm:hidden text-xs text-black font-extrabold px-3 py-1 bg-frz-primary hover:bg-frz-primary-hover rounded-lg transition shadow-sm"
           >
             Voltar para Lista
           </button>
@@ -173,10 +173,24 @@ export default function ComandaDetailView({
                           className="hover:bg-indigo-50/45 cursor-pointer transition group/row"
                           title="Clique para ver data/hora e consulta detalhada do pedido"
                         >
-                          <td className="py-3 px-3 font-mono text-[10px] text-slate-600 font-bold group-hover/row:text-semibold group-hover/row:text-[#C5A059] transition">{item.productCode}</td>
+                          <td className="py-3 px-3 font-mono text-[10px] text-slate-600 font-bold group-hover/row:text-semibold group-hover/row:text-frz-primary transition">{item.productCode}</td>
                           <td className="py-3 px-3">
-                            <span className="font-extrabold text-slate-900 block group-hover/row:text-[#C5A059] transition">{item.productName}</span>
-                            <span className="text-[10px] text-slate-500 font-semibold">Inserido em {new Date(item.timestamp || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div className="flex items-center gap-2">
+                              {(() => {
+                                const prod = products.find(p => p.id === item.productId);
+                                return prod?.image ? (
+                                  <img src={prod.image} alt={item.productName} className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                ) : (
+                                  <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 shrink-0">
+                                    <ImageIcon className="w-3.5 h-3.5" />
+                                  </div>
+                                );
+                              })()}
+                              <div>
+                                <span className="font-extrabold text-slate-900 block group-hover/row:text-frz-primary transition">{item.productName}</span>
+                                <span className="text-[10px] text-slate-500 font-semibold">Inserido em {new Date(item.timestamp || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            </div>
                           </td>
                           <td className="py-3 px-3 text-right font-semibold">R$ {Number(item.price || 0).toFixed(2)}</td>
                           
@@ -267,38 +281,70 @@ export default function ComandaDetailView({
 
             {/* Quick Add Product Bar (Admin POS power-feature) */}
             {!isPaid && (
-              <form onSubmit={handleAddItemSubmit} className="flex gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 mt-4">
-                <div className="flex-1">
-                  <select
-                    value={selectedProductId}
-                    onChange={(e) => setSelectedProductId(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 focus:outline-none"
+              <form onSubmit={handleAddItemSubmit} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mt-4">
+                <div className="mb-3">
+                  <label className="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Selecionar Produto</label>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                    {availableProductsForDropdown.length === 0 ? (
+                      <div className="col-span-full text-center py-3 text-slate-400 text-[10px]">Nenhum produto disponível em estoque.</div>
+                    ) : (
+                      availableProductsForDropdown.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setSelectedProductId(p.id)}
+                          className={`relative p-1.5 rounded-lg border-2 text-left transition cursor-pointer ${
+                            selectedProductId === p.id
+                              ? 'border-frz-primary bg-amber-50'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          {p.image ? (
+                            <img src={p.image} alt={p.name} className="w-full h-12 object-cover rounded-md mb-1" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <div className="w-full h-12 bg-slate-100 rounded-md flex items-center justify-center text-slate-400 mb-1">
+                              <ImageIcon className="w-4 h-4" />
+                            </div>
+                          )}
+                          <span className="text-[8px] font-bold text-slate-800 block leading-tight truncate">{p.name}</span>
+                          <span className="text-[7px] text-slate-400 block">R$ {Number(p.price || 0).toFixed(2)}</span>
+                          {selectedProductId === p.id && (
+                            <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-frz-primary rounded-full flex items-center justify-center">
+                              <Check className="w-2 h-2 text-black" />
+                            </div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="w-24">
+                    <label className="block text-[8px] font-black uppercase text-slate-400 mb-0.5">Qtd</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={quantity}
+                      onChange={(e) => setQuantity(Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2 text-center font-bold"
+                    />
+                  </div>
+                  <div className="flex-1 self-end">
+                    {selectedProductId && (
+                      <div className="text-[10px] text-slate-500 font-bold mb-1">
+                        Total: R$ {(Number(products.find(p => p.id === selectedProductId)?.price || 0) * quantity).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!selectedProductId}
+                    className="bg-frz-primary hover:bg-frz-primary-hover text-black font-extrabold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition disabled:opacity-50 cursor-pointer shadow-sm self-end"
                   >
-                    <option value="">-- Selecione um produto para adicionar rápido --</option>
-                    {availableProductsForDropdown.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - R$ {Number(p.price || 0).toFixed(2)} (Estoque: {p.stock} un)
-                      </option>
-                    ))}
-                  </select>
+                    <Plus className="w-3.5 h-3.5 text-black" />
+                    Inserir
+                  </button>
                 </div>
-                <div className="w-20">
-                  <input
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-full bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2 text-center font-bold"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={!selectedProductId}
-                  className="bg-[#C5A059] hover:bg-[#B38F4B] text-black font-extrabold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition disabled:opacity-50 cursor-pointer shadow-sm"
-                >
-                  <Plus className="w-3.5 h-3.5 text-black" />
-                  Inserir
-                </button>
               </form>
             )}
           </div>
@@ -330,7 +376,7 @@ export default function ComandaDetailView({
                         onCloseComanda(comanda.id);
                       }
                     }}
-                    className="flex-1 min-w-[150px] bg-[#C5A059] hover:bg-[#B38F4B] text-black text-xs font-extrabold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+                    className="flex-1 min-w-[150px] bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-extrabold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
                   >
                     <Check className="w-4 h-4 text-black" />
                     Fechar Comanda (Marcar Paga)
@@ -374,7 +420,7 @@ export default function ComandaDetailView({
                     onDeleteComanda(comanda.id);
                   }
                 }}
-                className="bg-[#C5A059] hover:bg-[#B38F4B] text-black border border-[#B38F4B] font-extrabold text-xs py-3 px-4 rounded-xl transition cursor-pointer shadow-sm"
+                className="bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover font-extrabold text-xs py-3 px-4 rounded-xl transition cursor-pointer shadow-sm"
                 title="Excluir comanda"
               >
                 Excluir Comanda
@@ -401,7 +447,7 @@ export default function ComandaDetailView({
             </p>
             <button
               onClick={() => onOpenSimulatorForComanda(comanda.id)}
-              className="mt-4 inline-flex items-center gap-1 bg-[#C5A059] hover:bg-[#B38F4B] text-black font-extrabold text-[11px] px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="mt-4 inline-flex items-center gap-1 bg-frz-primary hover:bg-frz-primary-hover text-black font-extrabold text-[11px] px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               Simular Smartphone
             </button>
@@ -435,7 +481,7 @@ export default function ComandaDetailView({
             </button>
             
             <div className="flex items-center gap-2.5 mb-4 border-b border-slate-100 pb-3">
-              <span className="p-2 bg-amber-50 rounded-xl text-[#C5A059]">
+              <span className="p-2 bg-amber-50 rounded-xl text-frz-primary">
                 <Calendar className="w-4.5 h-4.5" />
               </span>
               <div>
@@ -477,7 +523,7 @@ export default function ComandaDetailView({
                 </div>
                 <div className="text-right">
                   <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Subtotal Geral</span>
-                  <span className="font-black text-[#C5A059] text-sm">
+                  <span className="font-black text-frz-primary text-sm">
                     R$ {(Number(viewingItemDetail.price || 0) * Number(viewingItemDetail.quantity || 0)).toFixed(2)}
                   </span>
                 </div>
@@ -517,7 +563,7 @@ export default function ComandaDetailView({
                   id="cashier-item-detail-finish-btn"
                   type="button"
                   onClick={() => setViewingItemDetail(null)}
-                  className="px-5 py-2.5 bg-[#C5A059] hover:bg-[#B38F4B] text-black border border-[#B38F4B] text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5 text-black" />
                   Confirmar e Sair

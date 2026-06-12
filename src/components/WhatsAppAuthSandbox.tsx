@@ -79,7 +79,7 @@ export default function WhatsAppAuthSandbox({ onClose }: WhatsAppAuthSandboxProp
       {/* Dynamic Ambient Background Aura */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none select-none z-0">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[350px] h-[350px] bg-emerald-500/10 rounded-full blur-[80px]" />
-        <div className="absolute bottom-10 left-10 w-[200px] h-[200px] bg-[#C5A059]/5 rounded-full blur-[60px]" />
+        <div className="absolute bottom-10 left-10 w-[200px] h-[200px] bg-frz-primary/5 rounded-full blur-[60px]" />
       </div>
 
       {/* Mini Header */}

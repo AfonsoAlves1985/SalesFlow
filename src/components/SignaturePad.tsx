@@ -157,7 +157,7 @@ export default function SignaturePad({ onSave, onCancel }: SignaturePadProps) {
         <button
           onClick={saveSignature}
           disabled={!hasDrawn}
-          className="flex-2 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-[#C5A059] hover:bg-[#B38F4B] text-black text-xs font-black transition disabled:opacity-50 shadow-sm"
+          className="flex-2 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black transition disabled:opacity-50 shadow-sm"
         >
           <CheckCircle2 className="w-3.5 h-3.5 text-black" />
           Confirmar e Salvar

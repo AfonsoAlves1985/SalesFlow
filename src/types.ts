@@ -8,6 +8,7 @@ export interface Product {
   price: number;
   stock: number;
   category: string;
+  image?: string;
 }
 
 export interface OrderedItem {
@@ -70,6 +71,19 @@ export interface SystemUser {
   invitationCode?: string;
   needsPasswordChange?: boolean;
   createdAt: string;
+}
+
+export interface StockMovement {
+  id: string;
+  productId: string;
+  productName: string;
+  productCode: string;
+  type: 'entrada' | 'saida' | 'ajuste';
+  quantity: number;
+  price: number;
+  totalValue: number;
+  reference: string;
+  timestamp: string;
 }
 
 export type ThemeType = 'slate' | 'emerald' | 'midnight' | 'gold-dark';

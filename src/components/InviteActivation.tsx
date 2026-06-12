@@ -72,7 +72,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
 
         <div className="text-center relative">
           <div className="relative w-14 h-14 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-bounce">
-            <Sparkles className="w-7 h-7 text-[#C5A059]" />
+            <Sparkles className="w-7 h-7 text-frz-primary" />
             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-zinc-900 flex items-center justify-center text-[7px] font-bold text-white">✓</span>
           </div>
           <h2 className="text-2xl font-black text-white tracking-tight">Ative seu Acesso</h2>
@@ -87,7 +87,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
             <Shield className="w-5.5 h-5.5" />
           </div>
           <div className="min-w-0">
-            <span className="text-[10px] uppercase font-black tracking-widest text-[#C5A059] block">Cargo Atribuído</span>
+            <span className="text-[10px] uppercase font-black tracking-widest text-frz-primary block">Cargo Atribuído</span>
             <strong className="text-zinc-200 text-xs mt-0.5 block truncate">
               {invitedUser.role === 'admin' ? 'Co-Administrador' : 'Operador de Caixa'}
             </strong>
@@ -110,7 +110,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#C5A059]/20 focus:border-[#C5A059] outline-none font-medium transition"
+              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-frz-primary/20 focus:border-frz-primary outline-none font-medium transition"
               placeholder="Ex: Pedro Alvares Cabral"
             />
           </div>
@@ -122,7 +122,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#C5A059]/20 focus:border-[#C5A059] outline-none font-mono transition"
+              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-frz-primary/20 focus:border-frz-primary outline-none font-mono transition"
               placeholder="Ex: pedrinho_vendas"
             />
           </div>
@@ -137,7 +137,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
               required
               value={enteredTempPassword}
               onChange={(e) => setEnteredTempPassword(e.target.value)}
-              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#C5A059]/20 focus:border-[#C5A059] outline-none font-mono transition"
+              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-frz-primary/20 focus:border-frz-primary outline-none font-mono transition"
               placeholder="Digite a senha temporária dada pelo administrador"
             />
           </div>
@@ -150,7 +150,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#C5A059]/20 focus:border-[#C5A059] outline-none font-mono transition"
+                className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-frz-primary/20 focus:border-frz-primary outline-none font-mono transition"
                 placeholder="Ex p.ex: nova_senha"
               />
             </div>
@@ -161,7 +161,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#C5A059]/20 focus:border-[#C5A059] outline-none font-mono transition"
+                className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-frz-primary/20 focus:border-frz-primary outline-none font-mono transition"
                 placeholder="Repita a nova senha"
               />
             </div>
@@ -170,7 +170,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
           <div className="pt-2 flex flex-col gap-2.5">
             <button
               type="submit"
-              className="w-full py-3 bg-[#C5A059] hover:bg-[#B38F46] text-[#09090B] rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg shadow-amber-500/5 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3 bg-frz-primary hover:bg-frz-primary-hover text-[#09090B] rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg shadow-amber-500/5 cursor-pointer flex items-center justify-center gap-2"
             >
               <UserCheck className="w-4 h-4" />
               Confirmar & Ativar Acesso
