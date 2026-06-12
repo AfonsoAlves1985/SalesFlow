@@ -265,7 +265,7 @@ export default function App() {
     // Cooldown: skip for 3s after a local save to avoid stale data from other instances.
     // Version: read the latest comanda version from localStorage (written by any tab) and
     //   set cooldown if a newer version exists (cross-tab awareness).
-    // Stale detection: if remote has MORE items than local, it's old data → skip.
+    // Stale detection: if remote has FEWER items than local, it's old data → skip.
     const latestVersion = parseInt(localStorage.getItem('salesflow_comanda_version') || '0');
     if (latestVersion > comandaVersionRef.current) {
       comandaVersionRef.current = latestVersion;
@@ -277,7 +277,7 @@ export default function App() {
       if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
         const isStale = remoteComandas.some(rc => {
           const lc = comandasRef.current.find(c => c.id === rc.id);
-          return lc && rc.items.length > lc.items.length;
+          return lc && rc.items.length < lc.items.length;
         });
         if (!isStale) {
           setComandas(remoteComandas);
@@ -437,15 +437,21 @@ export default function App() {
           } else {
             needsSyncToServer = true;
             // Still check stale detection for comandas
-            const isStale = serverComandas.some((rc: Comanda) => {
+            const serverLooksStale = serverComandas.some((rc: Comanda) => {
+              const lc = loadedComandas.find(c => c.id === rc.id);
+              return lc && rc.items.length < lc.items.length;
+            });
+            const serverHasNewerItems = serverComandas.some((rc: Comanda) => {
               const lc = loadedComandas.find(c => c.id === rc.id);
               return lc && rc.items.length > lc.items.length;
             });
-            if (isStale) {
-              needsSyncToServer = true;
-            } else if (serverComandas.length > 0 && !loadedComandas.length) {
+            if (serverHasNewerItems || (serverComandas.length > 0 && !loadedComandas.length)) {
               setComandas(serverComandas);
+              localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
               loadedComandas = serverComandas;
+              needsSyncToServer = false;
+            } else if (serverLooksStale) {
+              needsSyncToServer = true;
             }
           }
         } else {
@@ -2231,13 +2237,6 @@ export default function App() {
                       </button>
                     </div>
 
-                    <button
-                      onClick={handleLogout}
-                      className="p-2 bg-slate-700 hover:bg-rose-900 text-slate-300 hover:text-white rounded-xl transition cursor-pointer"
-                      title="Sair do sistema"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
 
