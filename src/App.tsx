@@ -231,6 +231,7 @@ export default function App() {
   const productsRef = useRef<Product[]>(products);
   const comandasRef = useRef<Comanda[]>(comandas);
   const notificationsRef = useRef<any[]>(notifications);
+  const stockMovementsRef = useRef<StockMovement[]>(stockMovements);
   const categoriesRef = useRef<string[]>(categories);
   const unidadesRef = useRef<string[]>(unidades);
   const comandaSyncGuardRef = useRef(false);
@@ -241,9 +242,10 @@ export default function App() {
     productsRef.current = products;
     comandasRef.current = comandas;
     notificationsRef.current = notifications;
+    stockMovementsRef.current = stockMovements;
     categoriesRef.current = categories;
     unidadesRef.current = unidades;
-  }, [products, comandas, notifications, categories, unidades]);
+  }, [products, comandas, notifications, stockMovements, categories, unidades]);
 
   const isGeneratedModelComanda = (c: any) => {
     const name = String(c?.clientName || '').trim();
@@ -271,8 +273,8 @@ export default function App() {
       comandaVersionRef.current = latestVersion;
       comandaCooldownUntilRef.current = Date.now() + 3000;
     }
-    const canOverwriteComandas = !comandaSyncGuardRef.current && Date.now() >= comandaCooldownUntilRef.current;
-    if (canOverwriteComandas) {
+    const canApplyRemoteState = !comandaSyncGuardRef.current && Date.now() >= comandaCooldownUntilRef.current;
+    if (canApplyRemoteState) {
       const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
       if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
         const isStale = remoteComandas.some(rc => {
@@ -284,12 +286,32 @@ export default function App() {
           localStorage.setItem('salesflow_tickets_v2', JSON.stringify(remoteComandas));
         }
       }
+
+      if (Array.isArray(data.products) && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
+        setProducts(data.products);
+        localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+      }
+
+      if (Array.isArray(data.stockMovements) && JSON.stringify(data.stockMovements) !== JSON.stringify(stockMovementsRef.current)) {
+        setStockMovements(data.stockMovements);
+      }
+
+      if (Array.isArray(data.categories) && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
+        setCategories(data.categories);
+        localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
+      }
+
+      if (Array.isArray(data.unidades) && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
+        setUnidades(data.unidades);
+        localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+      }
+
+      if (Array.isArray(data.notifications) && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
+        setNotifications(data.notifications);
+        localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+      }
     }
 
-    if (data.notifications) {
-      setNotifications(data.notifications);
-      localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-    }
     if (data.whatsStatus) {
       setWhatsConnectionStatus(data.whatsStatus);
       localStorage.setItem('salesflow_whats_status', data.whatsStatus);
@@ -421,6 +443,9 @@ export default function App() {
         }
 
         const localDataVersion = localStorage.getItem('salesflow_comanda_version');
+        if (localDataVersion) {
+          comandaVersionRef.current = parseInt(localDataVersion) || 0;
+        }
         const hasLocalData = loadedComandas.length > 0 || loadedProducts.length > 0;
 
         // If we have a local version, trust localStorage entirely (Vercel instance isolation may return stale server data)
@@ -449,6 +474,18 @@ export default function App() {
               setComandas(serverComandas);
               localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
               loadedComandas = serverComandas;
+              if (Array.isArray(data.products) && data.products.length > 0) {
+                setProducts(data.products);
+                localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+                loadedProducts = data.products;
+              }
+              if (Array.isArray(data.notifications)) {
+                setNotifications(data.notifications);
+                localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+              }
+              if (Array.isArray(data.stockMovements)) {
+                setStockMovements(data.stockMovements);
+              }
               needsSyncToServer = false;
             } else if (serverLooksStale) {
               needsSyncToServer = true;
@@ -598,11 +635,15 @@ export default function App() {
     localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
     localStorage.setItem('salesflow_comanda_version', version.toString());
     comandaVersionRef.current = version;
-    
+
+    comandaSyncGuardRef.current = true;
+    comandaCooldownUntilRef.current = Date.now() + 3000;
     fetch('/api/products/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedProducts)
+    }).finally(() => {
+      comandaSyncGuardRef.current = false;
     }).catch(() => {});
   };
 
@@ -640,6 +681,8 @@ export default function App() {
       currentProds = updatedProducts;
     }
 
+    comandaSyncGuardRef.current = true;
+    comandaCooldownUntilRef.current = Date.now() + 3000;
     fetch('/api/state/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -649,6 +692,8 @@ export default function App() {
         notifications: notificationsRef.current, 
         categories: updatedCategories 
       })
+    }).finally(() => {
+      comandaSyncGuardRef.current = false;
     }).catch(() => {});
   };
 

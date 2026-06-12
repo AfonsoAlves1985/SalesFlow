@@ -218,6 +218,12 @@ async function syncToSupabase() {
   }
 }
 
+async function deleteFromSupabase(table: string, column: string, values: any[]) {
+  if (!supabase || values.length === 0) return;
+  const { error } = await supabase.from(table).delete().in(column, values);
+  if (error) throw error;
+}
+
 // --- DB persistence ---
 function loadDb() {
     const defaults = {
@@ -261,22 +267,31 @@ app.get('/api/state', async (_req: any, res: any) => {
 
 app.post('/api/state/sync', async (req: any, res: any) => {
   // Track removed IDs for Supabase deletion
+  const oldProductIds = (db.products || []).map((p: any) => p.id);
   const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
   const oldNotificationIds = (db.notifications || []).map((n: any) => n.id);
   const oldStockMovementIds = (db.stockMovements || []).map((m: any) => m.id);
+  const oldCategoryNames = (db.categories || []).map((name: string) => name);
+  const oldUnitNames = (db.unidades || []).map((name: string) => name);
 
   Object.assign(db, req.body);
   saveDb();
 
   // Delete removed items from Supabase
   if (supabase) {
+    const removedProductIds = oldProductIds.filter((id: string) => !(db.products || []).some((p: any) => p.id === id));
     const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
     const removedNotificationIds = oldNotificationIds.filter((id: string) => !(db.notifications || []).some((n: any) => n.id === id));
     const removedStockMovementIds = oldStockMovementIds.filter((id: string) => !(db.stockMovements || []).some((m: any) => m.id === id));
+    const removedCategoryNames = oldCategoryNames.filter((name: string) => !(db.categories || []).includes(name));
+    const removedUnitNames = oldUnitNames.filter((name: string) => !(db.unidades || []).includes(name));
     const deletePromises: Promise<any>[] = [];
+    if (removedProductIds.length > 0) deletePromises.push(supabase.from('products').delete().in('id', removedProductIds));
     if (removedComandaIds.length > 0) deletePromises.push(supabase.from('comandas').delete().in('id', removedComandaIds));
     if (removedNotificationIds.length > 0) deletePromises.push(supabase.from('notifications').delete().in('id', removedNotificationIds));
     if (removedStockMovementIds.length > 0) deletePromises.push(supabase.from('stock_movements').delete().in('id', removedStockMovementIds));
+    if (removedCategoryNames.length > 0) deletePromises.push(supabase.from('categories').delete().in('name', removedCategoryNames));
+    if (removedUnitNames.length > 0) deletePromises.push(supabase.from('unidades').delete().in('name', removedUnitNames));
     await Promise.all(deletePromises);
   }
 
@@ -294,16 +309,20 @@ app.post('/api/products', (req: any, res: any) => {
   res.json({ success: true, products: db.products });
 });
 
-app.delete('/api/products/:id', (req: any, res: any) => {
+app.delete('/api/products/:id', async (req: any, res: any) => {
   db.products = db.products.filter((p: any) => p.id !== req.params.id);
   saveDb();
+  await deleteFromSupabase('products', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase product delete failed:', e?.message));
   syncToSupabase().catch(() => {});
   res.json({ success: true, products: db.products });
 });
 
-app.post('/api/products/bulk', (req: any, res: any) => {
+app.post('/api/products/bulk', async (req: any, res: any) => {
+  const oldProductIds = (db.products || []).map((p: any) => p.id);
   if (Array.isArray(req.body)) db.products = req.body;
   saveDb();
+  const removedProductIds = oldProductIds.filter((id: string) => !(db.products || []).some((p: any) => p.id === id));
+  await deleteFromSupabase('products', 'id', removedProductIds).catch((e) => console.error('[SalesFlow] Supabase products bulk delete failed:', e?.message));
   syncToSupabase().catch(() => {});
   res.json({ success: true, products: db.products });
 });
@@ -318,16 +337,20 @@ app.post('/api/comandas', (req: any, res: any) => {
   res.json({ success: true, comandas: db.comandas });
 });
 
-app.delete('/api/comandas/:id', (req: any, res: any) => {
+app.delete('/api/comandas/:id', async (req: any, res: any) => {
   db.comandas = db.comandas.filter((c: any) => c.id !== req.params.id);
   saveDb();
+  await deleteFromSupabase('comandas', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase comanda delete failed:', e?.message));
   syncToSupabase().catch(() => {});
   res.json({ success: true, comandas: db.comandas });
 });
 
-app.post('/api/comandas/bulk', (req: any, res: any) => {
+app.post('/api/comandas/bulk', async (req: any, res: any) => {
+  const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
   if (Array.isArray(req.body)) db.comandas = req.body;
   saveDb();
+  const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
+  await deleteFromSupabase('comandas', 'id', removedComandaIds).catch((e) => console.error('[SalesFlow] Supabase comandas bulk delete failed:', e?.message));
   syncToSupabase().catch(() => {});
   res.json({ success: true, comandas: db.comandas });
 });
