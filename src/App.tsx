@@ -93,7 +93,7 @@ export default function App() {
 
   // Theme and viewing state
   const [theme, setTheme] = useState<ThemeType>('gold-dark');
-  const [viewMode, setViewMode] = useState<'both' | 'admin' | 'client'>('both');
+  const [viewMode, setViewMode] = useState<'both' | 'admin' | 'client'>('admin');
 
   useEffect(() => {
     const resolved = theme === 'gold-dark' ? 'dark' : 'light';
