@@ -414,41 +414,53 @@ export default function App() {
           loadedUnidades = data.unidades;
         }
 
-        // Server is empty or does not have products, but client has products in localStorage
-        if (data.products && Array.isArray(data.products) && data.products.length > 0) {
-          setProducts(data.products);
-          localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-          loadedProducts = data.products;
-        } else if (loadedProducts && loadedProducts.length > 0) {
-          needsSyncToServer = true;
-        }
+        const localDataVersion = localStorage.getItem('salesflow_comanda_version');
+        const hasLocalData = loadedComandas.length > 0 || loadedProducts.length > 0;
 
-        // Server comandas vs local comandas — trust local if we have a version (avoids stale data from isolated instances)
-        const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
-        const localComandaVersion = localStorage.getItem('salesflow_comanda_version');
-
-        if (serverComandas.length === 0 && loadedComandas.length > 0) {
-          // Server was explicitly cleared (by CLI/backend) — trust server, reset local
-          setComandas([]);
-          localStorage.setItem('salesflow_tickets_v2', '[]');
-          localStorage.removeItem('salesflow_comanda_version');
-          loadedComandas = [];
-        } else if (localComandaVersion && loadedComandas.length > 0) {
-          // Local has comandas with a version — trust local over server (server instance may be stale)
-          // But check if server is actually stale (has MORE items in any comanda = old data before deletion)
-          const isStale = serverComandas.some((rc: Comanda) => {
-            const lc = loadedComandas.find(c => c.id === rc.id);
-            return lc && rc.items.length > lc.items.length;
-          });
-          if (isStale) {
+        // If we have a local version, trust localStorage entirely (Vercel instance isolation may return stale server data)
+        if (localDataVersion && hasLocalData) {
+          // Keep local products & comandas, don't overwrite with server (which may be from different instance)
+          // Server was explicitly cleared — trust server for comandas
+          const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
+          if (serverComandas.length === 0 && loadedComandas.length > 0) {
+            setComandas([]);
+            localStorage.setItem('salesflow_tickets_v2', '[]');
+            localStorage.removeItem('salesflow_comanda_version');
+            loadedComandas = [];
+            needsSyncToServer = false;
+          } else {
+            needsSyncToServer = true;
+            // Still check stale detection for comandas
+            const isStale = serverComandas.some((rc: Comanda) => {
+              const lc = loadedComandas.find(c => c.id === rc.id);
+              return lc && rc.items.length > lc.items.length;
+            });
+            if (isStale) {
+              needsSyncToServer = true;
+            } else if (serverComandas.length > 0 && !loadedComandas.length) {
+              setComandas(serverComandas);
+              loadedComandas = serverComandas;
+            }
+          }
+        } else {
+          // No local version — trust server for products
+          if (data.products && Array.isArray(data.products) && data.products.length > 0) {
+            setProducts(data.products);
+            localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+            loadedProducts = data.products;
+          } else if (loadedProducts.length > 0) {
             needsSyncToServer = true;
           }
-        } else if (serverComandas.length > 0) {
-          setComandas(serverComandas);
-          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
-          loadedComandas = serverComandas;
-        } else if (loadedComandas.length > 0) {
-          needsSyncToServer = true;
+
+          // Server comandas
+          const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
+          if (serverComandas.length > 0) {
+            setComandas(serverComandas);
+            localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
+            loadedComandas = serverComandas;
+          } else if (loadedComandas.length > 0) {
+            needsSyncToServer = true;
+          }
         }
 
         if (needsSyncToServer) {
@@ -466,16 +478,19 @@ export default function App() {
           }).catch(err => console.error("Restore push failed:", err));
         }
 
-        if (data.notifications && Array.isArray(data.notifications)) {
-          setNotifications(data.notifications);
-          localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
-        }
+        if (!localDataVersion || !hasLocalData) {
+          // Only use server notifications/stock when no local version
+          if (data.notifications && Array.isArray(data.notifications)) {
+            setNotifications(data.notifications);
+            localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+          }
 
-        if (data.stockMovements && Array.isArray(data.stockMovements)) {
-          const cleaned = data.stockMovements.filter(
-            (m: StockMovement) => m.id !== 'MOV-1781139463153-464' && m.id !== 'MOV-1781139402298-296'
-          );
-          setStockMovements(cleaned);
+          if (data.stockMovements && Array.isArray(data.stockMovements)) {
+            const cleaned = data.stockMovements.filter(
+              (m: StockMovement) => m.id !== 'MOV-1781139463153-464' && m.id !== 'MOV-1781139402298-296'
+            );
+            setStockMovements(cleaned);
+          }
         }
 
         if (data.whatsStatus) {
@@ -567,7 +582,10 @@ export default function App() {
   // Sync back into localStorage and server on state updates
   const saveProductsToStorage = (updatedProducts: Product[]) => {
     setProducts(updatedProducts);
+    const version = Date.now();
     localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
     
     fetch('/api/products/bulk', {
       method: 'POST',
@@ -598,7 +616,10 @@ export default function App() {
 
   const handleSaveCategories = (updatedCategories: string[], updatedProducts?: Product[]) => {
     setCategories(updatedCategories);
+    const version = Date.now();
     localStorage.setItem('salesflow_categories', JSON.stringify(updatedCategories));
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
     
     let currentProds = products;
     if (updatedProducts) {
@@ -621,16 +642,16 @@ export default function App() {
 
   const handleSaveUnidades = (updatedUnidades: string[], updatedComandas?: Comanda[]) => {
     setUnidades(updatedUnidades);
+    const version = Date.now();
     localStorage.setItem('salesflow_unidades', JSON.stringify(updatedUnidades));
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
     
     let currentComas = comandas;
     if (updatedComandas) {
       currentComas = sanitizeComandas(updatedComandas) as Comanda[];
       setComandas(currentComas);
-      const version = Date.now();
       localStorage.setItem('salesflow_tickets_v2', JSON.stringify(currentComas));
-      localStorage.setItem('salesflow_comanda_version', version.toString());
-      comandaVersionRef.current = version;
     }
 
     comandaSyncGuardRef.current = true;
@@ -1060,6 +1081,7 @@ export default function App() {
     const updatedNotifs = [newNotifEmail, newNotifSms, newNotifWhatsApp, ...safeNotifications];
     setNotifications(updatedNotifs);
     localStorage.setItem('salesflow_notifications', JSON.stringify(updatedNotifs));
+    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
 
     // Post notification dispatches to Express server
     fetch('/api/notifications', {
@@ -1528,6 +1550,7 @@ export default function App() {
 
   const recordStockMovement = (movement: StockMovement) => {
     setStockMovements(prev => [movement, ...prev].slice(0, 1000));
+    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
     fetch('/api/stock-movements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1552,6 +1575,7 @@ export default function App() {
     setNotifications(prev => {
       const updated = [notif, ...prev].slice(0, 200);
       localStorage.setItem('salesflow_notifications', JSON.stringify(updated));
+      localStorage.setItem('salesflow_comanda_version', Date.now().toString());
       return updated;
     });
     fetch('/api/notifications', {

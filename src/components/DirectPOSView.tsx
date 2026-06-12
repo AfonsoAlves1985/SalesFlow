@@ -241,6 +241,7 @@ export default function DirectPOSView({
   const persistProducts = (updatedProducts: Product[]) => {
     setProducts(updatedProducts);
     localStorage.setItem('salesflow_products_v2', JSON.stringify(updatedProducts));
+    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
     fetch('/api/products/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -250,6 +251,7 @@ export default function DirectPOSView({
 
   const persistMovements = (movements: StockMovement[]) => {
     setStockMovements(prev => [...movements, ...prev].slice(0, 1000));
+    localStorage.setItem('salesflow_comanda_version', Date.now().toString());
     movements.forEach(movement => {
       fetch('/api/stock-movements', {
         method: 'POST',
