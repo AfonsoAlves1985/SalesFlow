@@ -332,8 +332,15 @@ export default function DirectPOSView({
       return;
     }
     executeRefund(pendingRefundSale);
+    closeRefundModal();
+  };
+
+  const closeRefundModal = () => {
     setShowRefundModal(false);
     setPendingRefundSale(null);
+    setRefundLogin('');
+    setRefundPassword('');
+    setRefundError('');
   };
 
   const executeRefund = (sale: SaleRecord) => {
@@ -820,7 +827,7 @@ export default function DirectPOSView({
                 <Lock className="w-4 h-4 text-frz-primary" />
                 Autorização de Estorno
               </h3>
-              <button onClick={() => setShowRefundModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={closeRefundModal} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -855,7 +862,7 @@ export default function DirectPOSView({
             )}
             <div className="flex gap-2">
               <button
-                onClick={() => setShowRefundModal(false)}
+                onClick={closeRefundModal}
                 className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black cursor-pointer transition"
               >
                 Cancelar

@@ -140,8 +140,18 @@ export default function AccessManagement({
       setCopiedSuccessLink(false);
     }
 
+    closeForm();
+  };
+
+  const closeForm = () => {
     setIsFormOpen(false);
     setEditingId(null);
+    setName('');
+    setUsername('');
+    setEmail('');
+    setRole('cashier');
+    setStatus('invited');
+    setPassword('');
   };
 
   const copyInviteLink = (user: SystemUser) => {
@@ -459,10 +469,7 @@ export default function AccessManagement({
       {/* FORM MODAL (Convidar ou Editar Colaborador) */}
       {isFormOpen && (
         <div 
-          onClick={() => {
-            setIsFormOpen(false);
-            setEditingId(null);
-          }}
+          onClick={closeForm}
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn cursor-pointer"
         >
           <div 
@@ -480,10 +487,7 @@ export default function AccessManagement({
                 </p>
               </div>
               <button 
-                onClick={() => {
-                  setIsFormOpen(false);
-                  setEditingId(null);
-                }}
+                onClick={closeForm}
                 className="text-slate-600 hover:text-slate-900 text-sm font-black p-1 cursor-pointer"
               >
                 ✕
@@ -620,10 +624,7 @@ export default function AccessManagement({
               <div className="flex gap-2.5 pt-2 border-t border-slate-100 mt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsFormOpen(false);
-                    setEditingId(null);
-                  }}
+                  onClick={closeForm}
                   className="flex-1 py-2 border border-slate-300 hover:bg-slate-150 text-slate-700 rounded-xl text-xs font-extrabold cursor-pointer transition text-center"
                 >
                   Sair

@@ -167,8 +167,19 @@ export default function StockManagement({
       image: image || undefined
     });
 
+    closeForm();
+  };
+
+  const closeForm = () => {
     setIsFormOpen(false);
     setEditingId(null);
+    setCode('');
+    setName('');
+    setPrice(0);
+    setStock(0);
+    setCategory(categories[0] || '');
+    setImage('');
+    setImageUrlInput('');
   };
 
   const filteredProducts = products.filter(p => 
@@ -350,7 +361,7 @@ export default function StockManagement({
               <div className="md:col-span-2 lg:col-span-5 flex justify-end gap-2 mt-2">
                 <button
                   type="button"
-                  onClick={() => setIsFormOpen(false)}
+                  onClick={closeForm}
                   className="px-3 py-1.5 border border-slate-300 text-slate-800 rounded-lg text-xs font-extrabold hover:bg-slate-100 transition cursor-pointer"
                 >
                   Cancelar
