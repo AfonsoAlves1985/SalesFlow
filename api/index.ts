@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 const isVercel = process.env.VERCEL === '1';
 const DB_FILE = isVercel
@@ -296,8 +297,7 @@ function saveDb() {
 }
 
 function getStateResponse(light: boolean) {
-  if (!light) return db;
-  return {
+  const response = !light ? db : {
     ...db,
     products: (db.products || []).map((p: any) => ({
       id: p.id,
@@ -308,6 +308,29 @@ function getStateResponse(light: boolean) {
       category: p.category,
       updatedAt: p.updatedAt
     }))
+  };
+  return { ...response, __meta: getStateMeta() };
+}
+
+function getStateMeta() {
+  const source = JSON.stringify({
+    products: (db.products || []).map((p: any) => [p.id, p.stock, p.price, p.category, p.updatedAt]),
+    comandas: (db.comandas || []).map((c: any) => [c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
+    notifications: (db.notifications || []).slice(0, 5).map((n: any) => [n.id, n.timestamp, n.status]),
+    stockMovements: (db.stockMovements || []).slice(0, 5).map((m: any) => [m.id, m.timestamp]),
+    categories: db.categories || [],
+    unidades: db.unidades || [],
+    whatsStatus: db.whatsStatus,
+    whatsNumber: db.whatsNumber
+  });
+  return {
+    version: crypto.createHash('sha1').update(source).digest('hex'),
+    counts: {
+      products: db.products?.length || 0,
+      comandas: db.comandas?.length || 0,
+      notifications: db.notifications?.length || 0,
+      stockMovements: db.stockMovements?.length || 0
+    }
   };
 }
 
@@ -323,6 +346,16 @@ app.get('/api/state', async (req: any, res: any) => {
   }
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.json(getStateResponse(req.query?.light === '1'));
+});
+
+app.get('/api/state/meta', async (_req: any, res: any) => {
+  const pulled = await pullFromSupabase(db);
+  if (pulled) {
+    db = pulled;
+    saveDb();
+  }
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.json(getStateMeta());
 });
 
 app.post('/api/state/sync', async (req: any, res: any) => {

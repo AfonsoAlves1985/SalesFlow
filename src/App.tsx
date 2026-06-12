@@ -241,6 +241,7 @@ export default function App() {
   const comandaSyncGuardRef = useRef(false);
   const comandaCooldownUntilRef = useRef(0);
   const comandaVersionRef = useRef(0);
+  const stateMetaVersionRef = useRef('');
 
   useEffect(() => {
     productsRef.current = products;
@@ -300,6 +301,9 @@ export default function App() {
 
   const applyRemoteState = (data: any) => {
     if (!data) return;
+    if (data.__meta?.version) {
+      stateMetaVersionRef.current = data.__meta.version;
+    }
 
     // Sync comandas from server.
     // Guard: skip while a local POST is in flight.
@@ -467,6 +471,9 @@ export default function App() {
     fetch('/api/state')
       .then(res => res.json())
       .then(data => {
+        if (data.__meta?.version) {
+          stateMetaVersionRef.current = data.__meta.version;
+        }
         let needsSyncToServer = false;
 
         if (data.categories && Array.isArray(data.categories) && data.categories.length > 0 && !cachedCategories) {
@@ -629,13 +636,23 @@ export default function App() {
   // Polling fallback/safety-net. Supabase Realtime is the primary sync channel in production.
   useEffect(() => {
     if (!isInitialized) return;
-    const intervalMs = isSupabaseConfigured() ? 120000 : 15000;
+    const intervalMs = 4000;
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/state?light=1');
-        if (!res.ok) return;
-        applyRemoteState(await res.json());
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const metaRes = await fetch('/api/state/meta');
+        if (!metaRes.ok) return;
+        const meta = await metaRes.json();
+        if (!meta?.version) return;
+        if (!stateMetaVersionRef.current) {
+          stateMetaVersionRef.current = meta.version;
+          return;
+        }
+        if (stateMetaVersionRef.current === meta.version) return;
+        const stateRes = await fetch('/api/state?light=1');
+        if (!stateRes.ok) return;
+        applyRemoteState(await stateRes.json());
       } catch {}
     }, intervalMs);
 
