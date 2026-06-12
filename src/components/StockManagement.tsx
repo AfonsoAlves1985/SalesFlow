@@ -331,11 +331,24 @@ export default function StockManagement({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
+                            const img = new Image();
                             const reader = new FileReader();
                             reader.onloadend = () => {
-                              const dataUrl = reader.result as string;
-                              setImage(dataUrl);
-                              setImageUrlInput(dataUrl);
+                              img.src = reader.result as string;
+                            };
+                            img.onload = () => {
+                              const maxW = 200;
+                              const scale = Math.min(maxW / img.width, maxW / img.height, 1);
+                              const w = Math.round(img.width * scale);
+                              const h = Math.round(img.height * scale);
+                              const canvas = document.createElement('canvas');
+                              canvas.width = w;
+                              canvas.height = h;
+                              const ctx = canvas.getContext('2d')!;
+                              ctx.drawImage(img, 0, 0, w, h);
+                              const compressed = canvas.toDataURL('image/jpeg', 0.6);
+                              setImage(compressed);
+                              setImageUrlInput(compressed);
                             };
                             reader.readAsDataURL(file);
                           }

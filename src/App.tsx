@@ -540,7 +540,7 @@ export default function App() {
   // Polling fallback/safety-net. Supabase Realtime is the primary sync channel in production.
   useEffect(() => {
     if (!isInitialized) return;
-    const intervalMs = isSupabaseConfigured() ? 10000 : 3000;
+    const intervalMs = isSupabaseConfigured() ? 30000 : 15000;
 
     const interval = setInterval(async () => {
       try {
