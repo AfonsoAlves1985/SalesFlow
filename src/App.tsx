@@ -427,19 +427,21 @@ export default function App() {
         const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
         const localComandaVersion = localStorage.getItem('salesflow_comanda_version');
 
-        if (localComandaVersion && loadedComandas.length > 0) {
+        if (serverComandas.length === 0 && loadedComandas.length > 0) {
+          // Server was explicitly cleared (by CLI/backend) — trust server, reset local
+          setComandas([]);
+          localStorage.setItem('salesflow_tickets_v2', '[]');
+          localStorage.removeItem('salesflow_comanda_version');
+          loadedComandas = [];
+        } else if (localComandaVersion && loadedComandas.length > 0) {
           // Local has comandas with a version — trust local over server (server instance may be stale)
-          if (serverComandas.length === 0) {
+          // But check if server is actually stale (has MORE items in any comanda = old data before deletion)
+          const isStale = serverComandas.some((rc: Comanda) => {
+            const lc = loadedComandas.find(c => c.id === rc.id);
+            return lc && rc.items.length > lc.items.length;
+          });
+          if (isStale) {
             needsSyncToServer = true;
-          } else {
-            // Check if server is actually stale (has MORE items in any comanda = old data before deletion)
-            const isStale = serverComandas.some(rc => {
-              const lc = loadedComandas.find(c => c.id === rc.id);
-              return lc && rc.items.length > lc.items.length;
-            });
-            if (isStale) {
-              needsSyncToServer = true; // push our latest to server
-            }
           }
         } else if (serverComandas.length > 0) {
           setComandas(serverComandas);
