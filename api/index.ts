@@ -295,17 +295,34 @@ function saveDb() {
   } catch {}
 }
 
+function getStateResponse(light: boolean) {
+  if (!light) return db;
+  return {
+    ...db,
+    products: (db.products || []).map((p: any) => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      price: p.price,
+      stock: p.stock,
+      category: p.category,
+      updatedAt: p.updatedAt
+    }))
+  };
+}
+
 // --- Express app setup ---
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 
-app.get('/api/state', async (_req: any, res: any) => {
+app.get('/api/state', async (req: any, res: any) => {
   const pulled = await pullFromSupabase(db);
   if (pulled) {
     db = pulled;
     saveDb();
   }
-  res.json(db);
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.json(getStateResponse(req.query?.light === '1'));
 });
 
 app.post('/api/state/sync', async (req: any, res: any) => {
@@ -346,7 +363,15 @@ app.post('/api/state/sync', async (req: any, res: any) => {
   }
 
   await syncToSupabase();
-  res.json({ success: true, ...db });
+  res.json({
+    success: true,
+    counts: {
+      products: db.products?.length || 0,
+      comandas: db.comandas?.length || 0,
+      notifications: db.notifications?.length || 0,
+      stockMovements: db.stockMovements?.length || 0
+    }
+  });
 });
 
 app.post('/api/products', async (req: any, res: any) => {
@@ -356,7 +381,7 @@ app.post('/api/products', async (req: any, res: any) => {
   if (i >= 0) db.products[i] = preferNewerProduct(p, db.products[i]); else db.products.push(p);
   saveDb();
   await syncToSupabase();
-  res.json({ success: true, products: db.products });
+  res.json({ success: true, count: db.products.length });
 });
 
 app.delete('/api/products/:id', async (req: any, res: any) => {
@@ -364,7 +389,7 @@ app.delete('/api/products/:id', async (req: any, res: any) => {
   saveDb();
   await deleteFromSupabase('products', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase product delete failed:', e?.message));
   await syncToSupabase();
-  res.json({ success: true, products: db.products });
+  res.json({ success: true, count: db.products.length });
 });
 
 app.post('/api/products/bulk', async (req: any, res: any) => {
@@ -374,7 +399,7 @@ app.post('/api/products/bulk', async (req: any, res: any) => {
   const removedProductIds = oldProductIds.filter((id: string) => !(db.products || []).some((p: any) => p.id === id));
   await deleteFromSupabase('products', 'id', removedProductIds).catch((e) => console.error('[SalesFlow] Supabase products bulk delete failed:', e?.message));
   await syncToSupabase();
-  res.json({ success: true, products: db.products });
+  res.json({ success: true, count: db.products.length });
 });
 
 app.post('/api/comandas', async (req: any, res: any) => {
@@ -384,7 +409,7 @@ app.post('/api/comandas', async (req: any, res: any) => {
   if (i >= 0) db.comandas[i] = preferNewerComanda(c, db.comandas[i]); else db.comandas.unshift(c);
   saveDb();
   await syncToSupabase();
-  res.json({ success: true, comandas: db.comandas });
+  res.json({ success: true, count: db.comandas.length });
 });
 
 app.delete('/api/comandas/:id', async (req: any, res: any) => {
@@ -392,7 +417,7 @@ app.delete('/api/comandas/:id', async (req: any, res: any) => {
   saveDb();
   await deleteFromSupabase('comandas', 'id', [req.params.id]).catch((e) => console.error('[SalesFlow] Supabase comanda delete failed:', e?.message));
   await syncToSupabase();
-  res.json({ success: true, comandas: db.comandas });
+  res.json({ success: true, count: db.comandas.length });
 });
 
 app.post('/api/comandas/bulk', async (req: any, res: any) => {
@@ -402,7 +427,7 @@ app.post('/api/comandas/bulk', async (req: any, res: any) => {
   const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
   await deleteFromSupabase('comandas', 'id', removedComandaIds).catch((e) => console.error('[SalesFlow] Supabase comandas bulk delete failed:', e?.message));
   await syncToSupabase();
-  res.json({ success: true, comandas: db.comandas });
+  res.json({ success: true, count: db.comandas.length });
 });
 
 app.post('/api/notifications', async (req: any, res: any) => {
@@ -412,7 +437,7 @@ app.post('/api/notifications', async (req: any, res: any) => {
   }
   saveDb();
   await syncToSupabase();
-  res.json({ success: true, notifications: db.notifications });
+  res.json({ success: true, count: db.notifications.length });
 });
 
 app.post('/api/reset', async (_req: any, res: any) => {
@@ -430,7 +455,7 @@ app.post('/api/reset', async (_req: any, res: any) => {
     ]).catch((e) => console.error('[SalesFlow] Supabase reset delete failed:', e?.message));
   }
   await syncToSupabase();
-  res.json({ success: true, ...db });
+  res.json({ success: true });
 });
 
 app.get('/api/stock-movements', (req: any, res: any) => {

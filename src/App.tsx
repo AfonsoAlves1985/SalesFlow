@@ -291,6 +291,13 @@ export default function App() {
     });
   };
 
+  const mergeProductsFromRemote = (remoteProducts: Product[], localProducts: Product[]) => {
+    return remoteProducts.map(remote => {
+      const local = localProducts.find(p => p.id === remote.id);
+      return !remote.image && local?.image ? { ...remote, image: local.image } : remote;
+    });
+  };
+
   const applyRemoteState = (data: any) => {
     if (!data) return;
 
@@ -316,9 +323,12 @@ export default function App() {
         }
       }
 
-      if (Array.isArray(data.products) && JSON.stringify(data.products) !== JSON.stringify(productsRef.current)) {
-        setProducts(data.products);
-        localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
+      if (Array.isArray(data.products)) {
+        const mergedProducts = mergeProductsFromRemote(data.products, productsRef.current);
+        if (JSON.stringify(mergedProducts) !== JSON.stringify(productsRef.current)) {
+          setProducts(mergedProducts);
+          localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
+        }
       }
 
       if (Array.isArray(data.stockMovements) && JSON.stringify(data.stockMovements) !== JSON.stringify(stockMovementsRef.current)) {
@@ -619,11 +629,11 @@ export default function App() {
   // Polling fallback/safety-net. Supabase Realtime is the primary sync channel in production.
   useEffect(() => {
     if (!isInitialized) return;
-    const intervalMs = isSupabaseConfigured() ? 30000 : 5000;
+    const intervalMs = isSupabaseConfigured() ? 120000 : 15000;
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/state');
+        const res = await fetch('/api/state?light=1');
         if (!res.ok) return;
         applyRemoteState(await res.json());
       } catch {}
@@ -643,7 +653,7 @@ export default function App() {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(async () => {
         try {
-          const res = await fetch('/api/state');
+          const res = await fetch('/api/state?light=1');
           if (!res.ok) return;
           applyRemoteState(await res.json());
         } catch (err) {
