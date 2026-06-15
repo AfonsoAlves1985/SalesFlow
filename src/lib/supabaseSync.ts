@@ -121,10 +121,10 @@ export function subscribeToSupabaseRealtime(
 ): { unsubscribe: () => void } | null {
   if (!supabase) return null;
 
-  const channel = supabase.channel('schema-db-changes')
+  const channel = supabase.channel('app-state-version')
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public' },
+      { event: '*', schema: 'public', table: 'app_state_version' },
       (payload) => {
         onUpdate(payload);
       }

@@ -112,6 +112,7 @@ async function sendEvolutionText(number: string, text: string) {
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 let supabase: any = null;
+const REALTIME_SIGNAL_ID = 'global';
 
 async function initSupabase() {
   if (!supabaseUrl || !supabaseKey) return;
@@ -126,6 +127,7 @@ async function initSupabase() {
 async function pullFromSupabase(defaults: any, light = false) {
   if (!supabase) return null;
   try {
+    const defaultProducts = Array.isArray(defaults?.products) ? defaults.products : [];
     const [cats, units, prods, coms, notifs, stockMovs] = await Promise.all([
       supabase.from('categories').select('name'),
       supabase.from('unidades').select('name'),
@@ -152,11 +154,14 @@ async function pullFromSupabase(defaults: any, light = false) {
       ...defaults,
       categories: (cats.data || []).map((c: any) => c.name),
       unidades: (units.data || []).map((u: any) => u.name),
-      products: (prods.data || []).map((p: any) => ({
-        id: p.id, code: p.code, name: p.name,
-        price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
-        image: light ? undefined : (p.image || undefined), updatedAt: p.updated_at
-      })),
+      products: (prods.data || []).map((p: any) => {
+        const localProduct = defaultProducts.find((local: any) => local?.id === p.id);
+        return {
+          id: p.id, code: p.code, name: p.name,
+          price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
+          image: light ? localProduct?.image : (p.image || undefined), updatedAt: p.updated_at
+        };
+      }),
       comandas: mappedComandas,
       notifications: (notifs.data || []).map((n: any) => ({
         id: n.id, timestamp: n.timestamp, recipient: n.recipient,
@@ -214,8 +219,22 @@ async function syncToSupabase() {
         reference: m.reference, timestamp: m.timestamp
       }))),
     ]);
+    await bumpRealtimeSignal();
   } catch (e: any) {
     console.error('[SalesFlow] Supabase sync failed:', e?.message);
+  }
+}
+
+async function bumpRealtimeSignal() {
+  if (!supabase) return;
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('app_state_version').upsert({
+    id: REALTIME_SIGNAL_ID,
+    version: now,
+    updated_at: now
+  }, { onConflict: 'id' });
+  if (error) {
+    console.error('[SalesFlow] Realtime signal update failed:', error.message);
   }
 }
 

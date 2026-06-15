@@ -163,3 +163,25 @@ create index if not exists stock_movements_product_id_idx on public.stock_moveme
 
 alter table public.stock_movements enable row level security;
 create policy "Acesso público completo a movimentos de estoque" on public.stock_movements for all using (true) with check (true);
+
+-- 9. Sinal leve de sincronização em tempo real
+-- O app assina esta tabela pequena no Realtime em vez de ouvir todas as tabelas pesadas.
+create table if not exists public.app_state_version (
+    id text primary key,
+    version text not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.app_state_version enable row level security;
+create policy "Acesso público completo ao sinal de sincronização" on public.app_state_version for all using (true) with check (true);
+
+insert into public.app_state_version (id, version)
+values ('global', extract(epoch from now())::text)
+on conflict (id) do nothing;
+
+do $$
+begin
+    alter publication supabase_realtime add table public.app_state_version;
+exception
+    when duplicate_object then null;
+end $$;

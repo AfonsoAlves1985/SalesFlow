@@ -468,7 +468,7 @@ export default function App() {
     }
 
     // Connect to Express back-office initial database state
-    fetch('/api/state')
+    fetch('/api/state?light=1')
       .then(res => res.json())
       .then(data => {
         if (data.__meta?.version) {
@@ -526,9 +526,10 @@ export default function App() {
               localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
               loadedComandas = serverComandas;
               if (Array.isArray(data.products) && data.products.length > 0) {
-                setProducts(data.products);
-                localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-                loadedProducts = data.products;
+                const mergedProducts = mergeProductsFromRemote(data.products, loadedProducts);
+                setProducts(mergedProducts);
+                localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
+                loadedProducts = mergedProducts;
               }
               if (Array.isArray(data.notifications)) {
                 setNotifications(data.notifications);
@@ -545,9 +546,10 @@ export default function App() {
         } else {
           // No local version — trust server for products
           if (data.products && Array.isArray(data.products) && data.products.length > 0) {
-            setProducts(data.products);
-            localStorage.setItem('salesflow_products_v2', JSON.stringify(data.products));
-            loadedProducts = data.products;
+            const mergedProducts = mergeProductsFromRemote(data.products, loadedProducts);
+            setProducts(mergedProducts);
+            localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
+            loadedProducts = mergedProducts;
           } else if (loadedProducts.length > 0) {
             needsSyncToServer = true;
           }
