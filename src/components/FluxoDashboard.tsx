@@ -139,12 +139,31 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     return Array.from(new Set(comandas.map(c => c.courseOrTraining).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   }, [comandas]);
 
+  const isComandaInReportPeriod = (comanda: Comanda) => {
+    if (isInPeriod(comanda.closedAt) || isInPeriod(comanda.createdAt) || isInPeriod(comanda.updatedAt)) return true;
+    return comanda.items.some(item => isInPeriod(item.timestamp));
+  };
+
   const courseComandasPeriodo = useMemo(() => {
-    return closedComandasPeriodo.filter(c => selectedCourse === 'all' || c.courseOrTraining === selectedCourse);
-  }, [closedComandasPeriodo, selectedCourse]);
+    return comandas
+      .filter(c => selectedCourse === 'all' || c.courseOrTraining === selectedCourse)
+      .filter(isComandaInReportPeriod);
+  }, [comandas, selectedCourse, startDate, endDate]);
 
   const courseComandaTotal = useMemo(() => {
     return courseComandasPeriodo.reduce((sum, comanda) => sum + getComandaTotal(comanda), 0);
+  }, [courseComandasPeriodo]);
+
+  const coursePaidTotal = useMemo(() => {
+    return courseComandasPeriodo
+      .filter(comanda => comanda.status === 'Pago')
+      .reduce((sum, comanda) => sum + getComandaTotal(comanda), 0);
+  }, [courseComandasPeriodo]);
+
+  const courseOpenTotal = useMemo(() => {
+    return courseComandasPeriodo
+      .filter(comanda => comanda.status !== 'Pago')
+      .reduce((sum, comanda) => sum + getComandaTotal(comanda), 0);
   }, [courseComandasPeriodo]);
 
   const courseStudentRows = useMemo(() => {
@@ -154,31 +173,49 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       course: string;
       unit: string;
       comandas: number;
+      paidComandas: number;
+      openComandas: number;
       items: number;
       total: number;
-      firstClosedAt: string;
-      lastClosedAt: string;
+      paidTotal: number;
+      openTotal: number;
+      firstActivityAt: string;
+      lastActivityAt: string;
     }>();
 
     courseComandasPeriodo.forEach(comanda => {
       const key = `${comanda.clientName}|${comanda.clientType}|${comanda.courseOrTraining}|${comanda.unit || ''}`;
       const total = getComandaTotal(comanda);
+      const activityDates = [comanda.createdAt, comanda.updatedAt, comanda.closedAt, ...comanda.items.map(item => item.timestamp)].filter(Boolean) as string[];
+      const firstActivity = activityDates.slice().sort()[0] || '';
+      const lastActivity = activityDates.slice().sort().at(-1) || '';
       const current = byStudent.get(key) || {
         student: comanda.clientName,
         clientType: comanda.clientType,
         course: comanda.courseOrTraining,
         unit: comanda.unit || '-',
         comandas: 0,
+        paidComandas: 0,
+        openComandas: 0,
         items: 0,
         total: 0,
-        firstClosedAt: comanda.closedAt || '',
-        lastClosedAt: comanda.closedAt || '',
+        paidTotal: 0,
+        openTotal: 0,
+        firstActivityAt: firstActivity,
+        lastActivityAt: lastActivity,
       };
       current.comandas += 1;
+      if (comanda.status === 'Pago') {
+        current.paidComandas += 1;
+        current.paidTotal += total;
+      } else {
+        current.openComandas += 1;
+        current.openTotal += total;
+      }
       current.items += comanda.items.reduce((sum, item) => sum + item.quantity, 0);
       current.total += total;
-      if (comanda.closedAt && (!current.firstClosedAt || comanda.closedAt < current.firstClosedAt)) current.firstClosedAt = comanda.closedAt;
-      if (comanda.closedAt && (!current.lastClosedAt || comanda.closedAt > current.lastClosedAt)) current.lastClosedAt = comanda.closedAt;
+      if (firstActivity && (!current.firstActivityAt || firstActivity < current.firstActivityAt)) current.firstActivityAt = firstActivity;
+      if (lastActivity && (!current.lastActivityAt || lastActivity > current.lastActivityAt)) current.lastActivityAt = lastActivity;
       byStudent.set(key, current);
     });
 
@@ -190,6 +227,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       comandaId: comanda.id,
       student: comanda.clientName,
       clientType: comanda.clientType,
+      status: comanda.status,
       course: comanda.courseOrTraining,
       unit: comanda.unit || '-',
       productName: item.productName,
@@ -198,6 +236,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       price: item.price,
       total: item.price * item.quantity,
       itemTimestamp: item.timestamp,
+      createdAt: comanda.createdAt,
       closedAt: comanda.closedAt || '',
     })));
   }, [courseComandasPeriodo]);
@@ -542,19 +581,21 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     const studentRows = courseStudentRows.map(row => `
       <tr>
         <td>${escapeHTML(row.student)}</td><td>${escapeHTML(row.clientType)}</td><td>${escapeHTML(row.course)}</td><td>${escapeHTML(row.unit)}</td>
-        <td>${row.comandas}</td><td>${row.items}</td><td>${formatCurrency(row.total)}</td><td>${escapeHTML(formatDate(row.firstClosedAt))}</td><td>${escapeHTML(formatDate(row.lastClosedAt))}</td>
+        <td>${row.comandas}</td><td>${row.paidComandas}</td><td>${row.openComandas}</td><td>${row.items}</td><td>${formatCurrency(row.total)}</td>
+        <td>${formatCurrency(row.paidTotal)}</td><td>${formatCurrency(row.openTotal)}</td><td>${escapeHTML(formatDate(row.firstActivityAt))}</td><td>${escapeHTML(formatDate(row.lastActivityAt))}</td>
       </tr>
     `).join('');
     const comandaRows = courseComandasPeriodo.map(comanda => `
       <tr>
         <td>${escapeHTML(comanda.id)}</td><td>${escapeHTML(comanda.clientName)}</td><td>${escapeHTML(comanda.clientType)}</td><td>${escapeHTML(comanda.courseOrTraining)}</td>
-        <td>${escapeHTML(comanda.unit || '-')}</td><td>${comanda.items.length}</td><td>${formatCurrency(getComandaTotal(comanda))}</td><td>${escapeHTML(formatDate(comanda.closedAt))}</td>
+        <td>${escapeHTML(comanda.unit || '-')}</td><td>${escapeHTML(comanda.status)}</td><td>${comanda.items.length}</td><td>${formatCurrency(getComandaTotal(comanda))}</td>
+        <td>${escapeHTML(formatDate(comanda.createdAt))}</td><td>${escapeHTML(formatDate(comanda.closedAt))}</td>
       </tr>
     `).join('');
     const itemRows = courseItemRows.map(item => `
       <tr>
-        <td>${escapeHTML(item.comandaId)}</td><td>${escapeHTML(item.student)}</td><td>${escapeHTML(item.course)}</td><td>${escapeHTML(item.productName)}</td>
-        <td>${escapeHTML(item.productCode)}</td><td>${item.quantity}</td><td>${formatCurrency(item.price)}</td><td>${formatCurrency(item.total)}</td><td>${escapeHTML(formatDate(item.closedAt))}</td>
+        <td>${escapeHTML(item.comandaId)}</td><td>${escapeHTML(item.student)}</td><td>${escapeHTML(item.course)}</td><td>${escapeHTML(item.status)}</td><td>${escapeHTML(item.productName)}</td>
+        <td>${escapeHTML(item.productCode)}</td><td>${item.quantity}</td><td>${formatCurrency(item.price)}</td><td>${formatCurrency(item.total)}</td><td>${escapeHTML(formatDate(item.itemTimestamp))}</td><td>${escapeHTML(formatDate(item.closedAt))}</td>
       </tr>
     `).join('');
 
@@ -577,15 +618,16 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       <div class="sub">Período: ${escapeHTML(startDate)} a ${escapeHTML(endDate)} | Gerado em ${escapeHTML(new Date().toLocaleString('pt-BR'))}</div>
       <div class="resumo">
         <div class="card"><div class="label">Curso/Treinamento</div><div class="val">${escapeHTML(courseLabel)}</div></div>
-        <div class="card"><div class="label">Comandas pagas</div><div class="val">${courseComandasPeriodo.length}</div></div>
-        <div class="card"><div class="label">Vendas no período</div><div class="val" style="color:#059669">${formatCurrency(courseComandaTotal)}</div></div>
+        <div class="card"><div class="label">Comandas</div><div class="val">${courseComandasPeriodo.length}</div></div>
+        <div class="card"><div class="label">Total geral</div><div class="val" style="color:#059669">${formatCurrency(courseComandaTotal)}</div></div>
+        <div class="card"><div class="label">Pago / Em aberto</div><div class="val">${formatCurrency(coursePaidTotal)} / ${formatCurrency(courseOpenTotal)}</div></div>
       </div>
-      <h2>Vendas por aluno</h2>
-      <table><thead><tr><th>Aluno/Cliente</th><th>Tipo</th><th>Curso</th><th>Unidade</th><th>Comandas</th><th>Itens</th><th>Total</th><th>Primeiro fechamento</th><th>Último fechamento</th></tr></thead><tbody>${studentRows || '<tr><td colspan="9">Sem vendas no período/filtro.</td></tr>'}</tbody></table>
+      <h2>Comandas por aluno/curso</h2>
+      <table><thead><tr><th>Aluno/Cliente</th><th>Tipo</th><th>Curso</th><th>Unidade</th><th>Comandas</th><th>Pagas</th><th>Abertas</th><th>Itens</th><th>Total</th><th>Total pago</th><th>Total aberto</th><th>Primeira atividade</th><th>Última atividade</th></tr></thead><tbody>${studentRows || '<tr><td colspan="13">Sem comandas no período/filtro.</td></tr>'}</tbody></table>
       <h2>Comandas do período</h2>
-      <table><thead><tr><th>Comanda</th><th>Aluno/Cliente</th><th>Tipo</th><th>Curso</th><th>Unidade</th><th>Itens</th><th>Total</th><th>Fechamento</th></tr></thead><tbody>${comandaRows || '<tr><td colspan="8">Sem comandas no período/filtro.</td></tr>'}</tbody></table>
-      <h2>Itens vendidos</h2>
-      <table><thead><tr><th>Comanda</th><th>Aluno/Cliente</th><th>Curso</th><th>Produto</th><th>Código</th><th>Qtd</th><th>Preço</th><th>Total</th><th>Fechamento</th></tr></thead><tbody>${itemRows || '<tr><td colspan="9">Sem itens vendidos no período/filtro.</td></tr>'}</tbody></table>
+      <table><thead><tr><th>Comanda</th><th>Aluno/Cliente</th><th>Tipo</th><th>Curso</th><th>Unidade</th><th>Status</th><th>Itens</th><th>Total</th><th>Abertura</th><th>Fechamento</th></tr></thead><tbody>${comandaRows || '<tr><td colspan="10">Sem comandas no período/filtro.</td></tr>'}</tbody></table>
+      <h2>Itens por aluno/curso</h2>
+      <table><thead><tr><th>Comanda</th><th>Aluno/Cliente</th><th>Curso</th><th>Status</th><th>Produto</th><th>Código</th><th>Qtd</th><th>Preço</th><th>Total</th><th>Data item</th><th>Fechamento</th></tr></thead><tbody>${itemRows || '<tr><td colspan="11">Sem itens no período/filtro.</td></tr>'}</tbody></table>
       </body></html>
     `;
   };
@@ -596,11 +638,13 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
     lines.push('RELATORIO DE COMANDAS POR ALUNO');
     lines.push(`Periodo;${startDate};${endDate}`);
     lines.push(`Curso;${escapeCSV(courseLabel)}`);
-    lines.push(`Comandas pagas;${courseComandasPeriodo.length}`);
-    lines.push(`Vendas;${formatNumber(courseComandaTotal)}`);
+    lines.push(`Comandas;${courseComandasPeriodo.length}`);
+    lines.push(`Total geral;${formatNumber(courseComandaTotal)}`);
+    lines.push(`Total pago;${formatNumber(coursePaidTotal)}`);
+    lines.push(`Total em aberto;${formatNumber(courseOpenTotal)}`);
     lines.push('');
-    lines.push('VENDAS POR ALUNO');
-    lines.push('Aluno/Cliente;Tipo;Curso;Unidade;Comandas;Itens;Total;Primeiro Fechamento;Ultimo Fechamento');
+    lines.push('COMANDAS POR ALUNO/CURSO');
+    lines.push('Aluno/Cliente;Tipo;Curso;Unidade;Comandas;Pagas;Abertas;Itens;Total;Total Pago;Total Em Aberto;Primeira Atividade;Ultima Atividade');
     courseStudentRows.forEach(row => {
       lines.push([
         escapeCSV(row.student),
@@ -608,15 +652,19 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
         escapeCSV(row.course),
         escapeCSV(row.unit),
         row.comandas,
+        row.paidComandas,
+        row.openComandas,
         row.items,
         formatNumber(row.total),
-        escapeCSV(formatDate(row.firstClosedAt)),
-        escapeCSV(formatDate(row.lastClosedAt)),
+        formatNumber(row.paidTotal),
+        formatNumber(row.openTotal),
+        escapeCSV(formatDate(row.firstActivityAt)),
+        escapeCSV(formatDate(row.lastActivityAt)),
       ].join(';'));
     });
     lines.push('');
     lines.push('COMANDAS DO PERIODO');
-    lines.push('Comanda;Aluno/Cliente;Tipo;Curso;Unidade;Itens;Total;Fechamento');
+    lines.push('Comanda;Aluno/Cliente;Tipo;Curso;Unidade;Status;Itens;Total;Abertura;Fechamento');
     courseComandasPeriodo.forEach(comanda => {
       lines.push([
         escapeCSV(comanda.id),
@@ -624,14 +672,16 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
         escapeCSV(comanda.clientType),
         escapeCSV(comanda.courseOrTraining),
         escapeCSV(comanda.unit || '-'),
+        escapeCSV(comanda.status),
         comanda.items.length,
         formatNumber(getComandaTotal(comanda)),
+        escapeCSV(formatDate(comanda.createdAt)),
         escapeCSV(formatDate(comanda.closedAt)),
       ].join(';'));
     });
     lines.push('');
-    lines.push('ITENS VENDIDOS');
-    lines.push('Comanda;Aluno/Cliente;Tipo;Curso;Unidade;Produto;Codigo;Quantidade;Preco;Total;Data Item;Fechamento');
+    lines.push('ITENS POR ALUNO/CURSO');
+    lines.push('Comanda;Aluno/Cliente;Tipo;Curso;Unidade;Status;Produto;Codigo;Quantidade;Preco;Total;Data Item;Fechamento');
     courseItemRows.forEach(item => {
       lines.push([
         escapeCSV(item.comandaId),
@@ -639,6 +689,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
         escapeCSV(item.clientType),
         escapeCSV(item.course),
         escapeCSV(item.unit),
+        escapeCSV(item.status),
         escapeCSV(item.productName),
         escapeCSV(item.productCode),
         item.quantity,
@@ -742,7 +793,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
             <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Exportação Separada</span>
             <h3 className="text-sm font-extrabold text-slate-800 mt-0.5">Comandas por Curso e Aluno</h3>
             <p className="text-[11px] text-slate-500 mt-1">
-              Usa o período selecionado acima e lista vendas de comandas pagas por aluno/cliente, com resumo e itens vendidos.
+              Usa o período selecionado acima e lista comandas abertas e pagas por aluno/cliente e curso, com resumo e itens consumidos.
             </p>
           </div>
 
@@ -775,14 +826,22 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-5">
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Comandas Pagas</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Comandas no Filtro</div>
             <div className="text-xl font-black text-slate-800 mt-1">{courseComandasPeriodo.length}</div>
           </div>
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Vendas no Filtro</div>
-            <div className="text-xl font-black text-emerald-700 font-mono mt-1">{formatCurrency(courseComandaTotal)}</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Total Pago</div>
+            <div className="text-xl font-black text-emerald-700 font-mono mt-1">{formatCurrency(coursePaidTotal)}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-amber-600">Total em Aberto</div>
+            <div className="text-xl font-black text-amber-700 font-mono mt-1">{formatCurrency(courseOpenTotal)}</div>
+          </div>
+          <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-violet-600">Total Geral</div>
+            <div className="text-xl font-black text-violet-700 font-mono mt-1">{formatCurrency(courseComandaTotal)}</div>
           </div>
           <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
             <div className="text-[10px] font-black uppercase tracking-wider text-indigo-600">Alunos/Clientes</div>
@@ -797,15 +856,18 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
                 <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Aluno/Cliente</th>
                 <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Curso</th>
                 <th className="text-center p-3 font-extrabold text-slate-500 text-[10px] uppercase">Comandas</th>
+                <th className="text-center p-3 font-extrabold text-slate-500 text-[10px] uppercase">Pagas</th>
+                <th className="text-center p-3 font-extrabold text-slate-500 text-[10px] uppercase">Abertas</th>
                 <th className="text-center p-3 font-extrabold text-slate-500 text-[10px] uppercase">Itens</th>
                 <th className="text-right p-3 font-extrabold text-slate-500 text-[10px] uppercase">Total</th>
-                <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Último Fechamento</th>
+                <th className="text-right p-3 font-extrabold text-slate-500 text-[10px] uppercase">Em Aberto</th>
+                <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Última Atividade</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {courseStudentRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-slate-400">Nenhuma comanda paga encontrada no período e curso selecionados.</td>
+                  <td colSpan={9} className="p-6 text-center text-slate-400">Nenhuma comanda encontrada no período e curso selecionados.</td>
                 </tr>
               ) : (
                 courseStudentRows.map(row => (
@@ -813,9 +875,12 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
                     <td className="p-3 font-bold text-slate-800">{row.student}</td>
                     <td className="p-3 text-slate-500">{row.course}</td>
                     <td className="p-3 text-center font-mono font-bold">{row.comandas}</td>
+                    <td className="p-3 text-center font-mono font-bold text-emerald-700">{row.paidComandas}</td>
+                    <td className="p-3 text-center font-mono font-bold text-amber-700">{row.openComandas}</td>
                     <td className="p-3 text-center font-mono font-bold">{row.items}</td>
                     <td className="p-3 text-right font-mono font-black text-emerald-700">{formatCurrency(row.total)}</td>
-                    <td className="p-3 text-slate-400 text-[10px] whitespace-nowrap">{formatDate(row.lastClosedAt)}</td>
+                    <td className="p-3 text-right font-mono font-black text-amber-700">{formatCurrency(row.openTotal)}</td>
+                    <td className="p-3 text-slate-400 text-[10px] whitespace-nowrap">{formatDate(row.lastActivityAt)}</td>
                   </tr>
                 ))
               )}
