@@ -1697,7 +1697,7 @@ export default function App() {
 
   const getShiftRevenue = (shift: CashierShift) => {
     return comandas
-      .filter(c => c.status === 'Pago' && c.closedAt && c.closedAt >= shift.openedAt && (!shift.closedBy || c.closedAt <= shift.openedAt))
+      .filter(c => c.status === 'Pago' && c.closedAt && c.closedAt >= shift.openedAt && (!shift.closedAt || c.closedAt <= shift.closedAt))
       .reduce((val, c) => {
         const comandaValue = c.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
         return val + comandaValue;
@@ -2571,6 +2571,8 @@ export default function App() {
                     comandas={comandas}
                     stockMovements={stockMovements}
                     setStockMovements={setStockMovements}
+                    activeShift={activeShift}
+                    shiftHistory={shiftHistory}
                   />
                 ) : activeAdminSubTab === 'acessos' ? (
                   <AccessManagement
