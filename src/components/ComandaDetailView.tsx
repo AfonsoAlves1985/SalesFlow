@@ -127,7 +127,7 @@ export default function ComandaDetailView({
         {onBackToList && (
           <button 
             onClick={onBackToList}
-            className="sm:hidden text-xs text-black font-extrabold px-3 py-1 bg-frz-primary hover:bg-frz-primary-hover rounded-lg transition shadow-sm"
+            className="sm:hidden text-xs text-white font-extrabold px-3 py-1 bg-frz-primary hover:bg-frz-primary-hover rounded-lg transition shadow-sm"
           >
             Voltar para Lista
           </button>
@@ -264,7 +264,7 @@ export default function ComandaDetailView({
                             <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                               <button
                                 onClick={() => onRemoveItem(comanda.id, item.id)}
-                                className="p-1 text-slate-400 hover:text-rose-500 rounded hover:bg-slate-50 transition cursor-pointer"
+                                className="p-1 text-slate-500 hover:text-rose-500 rounded hover:bg-slate-50 transition cursor-pointer"
                                 title="Remover item da comanda"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -310,7 +310,7 @@ export default function ComandaDetailView({
                           <span className="text-[7px] text-slate-400 block">R$ {Number(p.price || 0).toFixed(2)}</span>
                           {selectedProductId === p.id && (
                             <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-frz-primary rounded-full flex items-center justify-center">
-                              <Check className="w-2 h-2 text-black" />
+                              <Check className="w-2 h-2 text-white" />
                             </div>
                           )}
                         </button>
@@ -339,9 +339,9 @@ export default function ComandaDetailView({
                   <button
                     type="submit"
                     disabled={!selectedProductId}
-                    className="bg-frz-primary hover:bg-frz-primary-hover text-black font-extrabold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition disabled:opacity-50 cursor-pointer shadow-sm self-end"
+                    className="bg-frz-primary hover:bg-frz-primary-hover text-white font-extrabold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition disabled:opacity-50 cursor-pointer shadow-sm self-end"
                   >
-                    <Plus className="w-3.5 h-3.5 text-black" />
+                    <Plus className="w-3.5 h-3.5 text-white" />
                     Inserir
                   </button>
                 </div>
@@ -376,9 +376,9 @@ export default function ComandaDetailView({
                         onCloseComanda(comanda.id);
                       }
                     }}
-                    className="flex-1 min-w-[150px] bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-extrabold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+                    className="flex-1 min-w-[150px] bg-frz-primary hover:bg-frz-primary-hover text-white text-xs font-extrabold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
                   >
-                    <Check className="w-4 h-4 text-black" />
+                    <Check className="w-4 h-4 text-white" />
                     Fechar Comanda (Marcar Paga)
                   </button>
 
@@ -420,7 +420,7 @@ export default function ComandaDetailView({
                     onDeleteComanda(comanda.id);
                   }
                 }}
-                className="bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover font-extrabold text-xs py-3 px-4 rounded-xl transition cursor-pointer shadow-sm"
+                className="bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover font-extrabold text-xs py-3 px-4 rounded-xl transition cursor-pointer shadow-sm"
                 title="Excluir comanda"
               >
                 Excluir Comanda
@@ -447,7 +447,7 @@ export default function ComandaDetailView({
             </p>
             <button
               onClick={() => onOpenSimulatorForComanda(comanda.id)}
-              className="mt-4 inline-flex items-center gap-1 bg-frz-primary hover:bg-frz-primary-hover text-black font-extrabold text-[11px] px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="mt-4 inline-flex items-center gap-1 bg-frz-primary hover:bg-frz-primary-hover text-white font-extrabold text-[11px] px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               Simular Smartphone
             </button>
@@ -563,9 +563,9 @@ export default function ComandaDetailView({
                   id="cashier-item-detail-finish-btn"
                   type="button"
                   onClick={() => setViewingItemDetail(null)}
-                  className="px-5 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5 text-black" />
+                  <Check className="w-3.5 h-3.5 text-white" />
                   Confirmar e Sair
                 </button>
               </div>

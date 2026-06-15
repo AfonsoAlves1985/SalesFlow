@@ -204,17 +204,17 @@ export default function StockManagement({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover/30 rounded-xl text-xs font-extrabold transition cursor-pointer"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover/30 rounded-xl text-xs font-extrabold transition cursor-pointer"
           >
-            <Tag className="w-4 h-4 text-black" />
+            <Tag className="w-4 h-4 text-white" />
             Gerenciar Categorias
           </button>
           
           <button
             onClick={handleOpenNew}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-extrabold transition shadow-sm cursor-pointer"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-extrabold transition shadow-sm cursor-pointer"
           >
-            <Plus className="w-4 h-4 text-black" />
+            <Plus className="w-4 h-4 text-white" />
             Novo Produto
           </button>
         </div>
@@ -381,9 +381,9 @@ export default function StockManagement({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  className="px-4 py-1.5 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-lg text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                   Salvar Produto
                 </button>
               </div>
@@ -527,9 +527,9 @@ export default function StockManagement({
                 />
                 <button
                   type="submit"
-                  className="px-3.5 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0"
+                  className="px-3.5 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0"
                 >
-                  <Plus className="w-3.5 h-3.5 text-black" />
+                  <Plus className="w-3.5 h-3.5 text-white" />
                   Adicionar
                 </button>
               </form>
@@ -623,9 +623,9 @@ export default function StockManagement({
                     setIsCategoryModalOpen(false);
                     setEditingCategoryName(null);
                   }}
-                  className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                   Confirmar e Sair
                 </button>
               </div>

@@ -201,9 +201,9 @@ export default function AccessManagement({
         </div>
         <button
           onClick={handleOpenNew}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
         >
-          <UserPlus className="w-4 h-4 text-black" />
+          <UserPlus className="w-4 h-4 text-white" />
           Convidar Novo Usuário
         </button>
       </div>
@@ -632,9 +632,9 @@ export default function AccessManagement({
                 <button
                   type="submit"
                   disabled={editingId === 'u-superadmin' && role !== 'admin'}
-                  className="flex-1 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black rounded-xl text-xs font-black shadow-sm cursor-pointer transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-black shadow-sm cursor-pointer transition disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5 text-black" />
+                  <Check className="w-3.5 h-3.5 text-white" />
                   {editingId ? 'Confirmar e Salvar' : 'Gerar Convite'}
                 </button>
               </div>
@@ -743,9 +743,9 @@ export default function AccessManagement({
               <button
                 type="button"
                 onClick={() => setNewlyCreatedUserForInvite(null)}
-                className="px-6 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover text-xs font-black rounded-xl transition cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
               >
-                Confirmar e Concluir <Check className="w-4 h-4 text-black stroke-[3]" />
+                Confirmar e Concluir <Check className="w-4 h-4 text-white stroke-[3]" />
               </button>
             </div>
           </div>

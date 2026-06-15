@@ -518,12 +518,12 @@ export default function DirectPOSView({
               {selectedProduct?.image ? (
                 <img src={selectedProduct.image} alt={selectedProduct.name} className="max-h-[310px] w-full object-contain bg-white rounded-lg" />
               ) : selectedProduct ? (
-                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-300 border border-slate-100">
+                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 border border-slate-100">
                   <ImageIcon className="w-16 h-16" />
-                  <span className="text-xs font-bold mt-2 text-slate-400">Produto sem foto</span>
+                  <span className="text-xs font-bold mt-2 text-slate-500">Produto sem foto</span>
                 </div>
               ) : (
-                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-400 text-center px-6 border border-slate-100">
+                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 text-center px-6 border border-slate-100">
                   <ImageIcon className="w-14 h-14 mb-3" />
                   <p className="text-sm font-black uppercase">Foto do produto</p>
                   <p className="text-xs mt-1">Aparece após inserir código ou nome.</p>

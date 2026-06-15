@@ -170,7 +170,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
           <div className="pt-2 flex flex-col gap-2.5">
             <button
               type="submit"
-              className="w-full py-3 bg-frz-primary hover:bg-frz-primary-hover text-[#09090B] rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg shadow-amber-500/5 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-3 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-xs font-black uppercase tracking-wider transition shadow-lg shadow-amber-500/5 cursor-pointer flex items-center justify-center gap-2"
             >
               <UserCheck className="w-4 h-4" />
               Confirmar & Ativar Acesso

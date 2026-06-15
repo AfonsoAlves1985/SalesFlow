@@ -61,13 +61,13 @@ export default function ComandaPOSView({
             </button>
           )}
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
               type="text"
               placeholder="Buscar produto por nome ou código..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-frz-primary focus:ring-1 focus:ring-frz-primary/20 transition"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary focus:ring-1 focus:ring-frz-primary/20 transition"
             />
           </div>
           <div className="text-xs font-bold text-slate-500 bg-slate-50 px-3 py-2 rounded-xl whitespace-nowrap">

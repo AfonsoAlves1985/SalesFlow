@@ -697,7 +697,7 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
               onClick={() => applyPreset(p.key)}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition cursor-pointer ${
                 filterPreset === p.key
-                  ? 'bg-frz-primary text-black shadow-sm'
+                  ? 'bg-frz-primary text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >

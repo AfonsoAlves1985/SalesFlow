@@ -142,9 +142,9 @@ export default function UnitManagementModal({
             <button
               id="new-unit-submit"
               type="submit"
-              className="px-3.5 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black border border-frz-primary-hover rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
+              className="px-3.5 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 shrink-0 shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5 text-black" />
+              <Plus className="w-3.5 h-3.5 text-white" />
               Adicionar
             </button>
           </form>
@@ -239,9 +239,9 @@ export default function UnitManagementModal({
               id="unit-mgmt-confirm-btn"
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-black border border-[#1565C0] text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white border border-[#1565C0] text-xs font-black rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
             >
-              <Check className="w-3.5 h-3.5 text-black" />
+              <Check className="w-3.5 h-3.5 text-white" />
               Confirmar e Sair
             </button>
           </div>

@@ -224,7 +224,7 @@ export default function ComandaList({
             {onOpenManageUnits && (
               <button
                 onClick={onOpenManageUnits}
-                className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1"
+                className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-white font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1"
               >
                 Gerenciar Unidades
               </button>
@@ -232,7 +232,7 @@ export default function ComandaList({
 
             <button
               onClick={onOpenCreateModal}
-              className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-black font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="bg-frz-primary border border-frz-primary-hover hover:bg-frz-primary-hover text-white font-extrabold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               Criar Comanda
             </button>
@@ -310,7 +310,7 @@ export default function ComandaList({
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button
-                          className={`px-3 py-1 text-xs font-extrabold rounded-lg transition cursor-pointer ${isSelected ? 'bg-frz-primary text-black border border-frz-primary-hover' : 'border border-frz-primary-hover/30 text-black bg-frz-primary/40 hover:bg-frz-primary/60'}`}
+                          className={`px-3 py-1 text-xs font-extrabold rounded-lg transition cursor-pointer ${isSelected ? 'bg-frz-primary text-white border border-frz-primary-hover' : 'border border-frz-primary-hover/30 text-slate-900 bg-frz-primary/40 hover:bg-frz-primary/60'}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             onSelect(comanda);
