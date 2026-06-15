@@ -123,13 +123,13 @@ async function initSupabase() {
   }
 }
 
-async function pullFromSupabase(defaults: any) {
+async function pullFromSupabase(defaults: any, light = false) {
   if (!supabase) return null;
   try {
     const [cats, units, prods, coms, notifs, stockMovs] = await Promise.all([
       supabase.from('categories').select('name'),
       supabase.from('unidades').select('name'),
-      supabase.from('products').select('*'),
+      supabase.from('products').select(light ? 'id,code,name,price,stock,category,updated_at' : '*'),
       supabase.from('comandas').select('*').order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').order('timestamp', { ascending: false }).limit(50),
       supabase.from('stock_movements').select('*').order('timestamp', { ascending: false }).limit(200),
@@ -155,7 +155,7 @@ async function pullFromSupabase(defaults: any) {
       products: (prods.data || []).map((p: any) => ({
         id: p.id, code: p.code, name: p.name,
         price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
-        image: p.image || undefined, updatedAt: p.updated_at
+        image: light ? undefined : (p.image || undefined), updatedAt: p.updated_at
       })),
       comandas: mappedComandas,
       notifications: (notifs.data || []).map((n: any) => ({
@@ -339,21 +339,17 @@ const app = express();
 app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/state', async (req: any, res: any) => {
-  const pulled = await pullFromSupabase(db);
+  const light = req.query?.light === '1';
+  const pulled = await pullFromSupabase(db, light);
   if (pulled) {
     db = pulled;
     saveDb();
   }
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.json(getStateResponse(req.query?.light === '1'));
+  res.json(getStateResponse(light));
 });
 
 app.get('/api/state/meta', async (_req: any, res: any) => {
-  const pulled = await pullFromSupabase(db);
-  if (pulled) {
-    db = pulled;
-    saveDb();
-  }
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.json(getStateMeta());
 });
