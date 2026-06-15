@@ -91,11 +91,24 @@ async function sendEvolutionText(number: string, text: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers.apikey = apiKey;
 
-  const response = await fetch(`${baseUrl}/message/sendText/${encodeURIComponent(instance)}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ number, text })
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/message/sendText/${encodeURIComponent(instance)}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ number, text }),
+      signal: controller.signal
+    });
+  } catch (e: any) {
+    const error = e?.name === 'AbortError'
+      ? 'Timeout ao conectar na Evolution. Verifique se o túnel público está ativo e atualizado na Vercel.'
+      : (e?.message || 'Falha de rede ao conectar na Evolution.');
+    return { success: false, error };
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const raw = await response.text();
   let data: any = raw;
@@ -106,6 +119,53 @@ async function sendEvolutionText(number: string, text: string) {
   }
 
   return { success: true, data };
+}
+
+async function checkEvolutionHealth() {
+  const baseUrl = (process.env.EVOLUTION_API_URL || process.env.EVOLUTION_BASE_URL || '').replace(/\/$/, '');
+  const apiKey = process.env.EVOLUTION_API_KEY || '';
+  const instance = process.env.EVOLUTION_INSTANCE_NAME || process.env.EVOLUTION_INSTANCE || '';
+  const configured = !!baseUrl && !!instance;
+
+  if (!configured) {
+    return { configured, ok: false, error: 'Evolution não configurado no ambiente.' };
+  }
+
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.apikey = apiKey;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(`${baseUrl}/instance/connectionState/${encodeURIComponent(instance)}`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    });
+    const raw = await response.text();
+    let data: any = raw;
+    try { data = JSON.parse(raw); } catch {}
+    return {
+      configured,
+      ok: response.ok,
+      status: response.status,
+      instance,
+      urlHost: (() => { try { return new URL(baseUrl).host; } catch { return 'invalid-url'; } })(),
+      data
+    };
+  } catch (e: any) {
+    return {
+      configured,
+      ok: false,
+      instance,
+      urlHost: (() => { try { return new URL(baseUrl).host; } catch { return 'invalid-url'; } })(),
+      error: e?.name === 'AbortError'
+        ? 'Timeout ao acessar Evolution. Túnel provavelmente indisponível.'
+        : (e?.message || 'Falha de rede ao acessar Evolution.')
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // --- Supabase integration ---
@@ -567,6 +627,11 @@ app.post('/api/whatsapp/config', async (req: any, res: any) => {
   saveDb();
   await syncToSupabase();
   res.json({ success: true, whatsStatus: db.whatsStatus, whatsNumber: db.whatsNumber });
+});
+
+app.get('/api/whatsapp/evolution-health', async (_req: any, res: any) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.json(await checkEvolutionHealth());
 });
 
 app.post('/api/whatsapp/send-comanda-link', async (req: any, res: any) => {
