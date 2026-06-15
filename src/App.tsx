@@ -242,6 +242,7 @@ export default function App() {
   const comandaCooldownUntilRef = useRef(0);
   const comandaVersionRef = useRef(0);
   const stateMetaVersionRef = useRef('');
+  const requestedProductImagesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     productsRef.current = products;
@@ -251,6 +252,42 @@ export default function App() {
     categoriesRef.current = categories;
     unidadesRef.current = unidades;
   }, [products, comandas, notifications, stockMovements, categories, unidades]);
+
+  useEffect(() => {
+    if (!isInitialized || products.length === 0) return;
+    const missingImageIds = products
+      .filter(product => !product.image && !requestedProductImagesRef.current.has(product.id))
+      .map(product => product.id);
+    if (missingImageIds.length === 0) return;
+
+    missingImageIds.forEach(id => requestedProductImagesRef.current.add(id));
+    fetch('/api/products/images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: missingImageIds })
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data?.images || typeof data.images !== 'object') return;
+        setProducts(prev => {
+          let changed = false;
+          const hydrated = prev.map(product => {
+            const image = data.images[product.id];
+            if (!product.image && image) {
+              changed = true;
+              return { ...product, image };
+            }
+            return product;
+          });
+          if (changed) {
+            productsRef.current = hydrated;
+            localStorage.setItem('salesflow_products_v2', JSON.stringify(hydrated));
+          }
+          return changed ? hydrated : prev;
+        });
+      })
+      .catch(() => {});
+  }, [isInitialized, products]);
 
   const isGeneratedModelComanda = (c: any) => {
     const name = String(c?.clientName || '').trim();

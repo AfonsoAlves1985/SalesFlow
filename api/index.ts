@@ -373,6 +373,36 @@ app.get('/api/state/meta', async (_req: any, res: any) => {
   res.json(getStateMeta());
 });
 
+app.post('/api/products/images', async (req: any, res: any) => {
+  const ids: string[] = Array.isArray(req.body?.ids)
+    ? Array.from(new Set<string>(req.body.ids.map((id: any) => String(id || '').trim()).filter(Boolean))).slice(0, 200)
+    : [];
+  const images: Record<string, string> = {};
+
+  for (const id of ids) {
+    const product = (db.products || []).find((p: any) => p?.id === id);
+    if (product?.image) images[id] = product.image;
+  }
+
+  const missingIds = ids.filter(id => !images[id]);
+  if (supabase && missingIds.length > 0) {
+    const { data, error } = await supabase.from('products').select('id,image').in('id', missingIds);
+    if (!error && Array.isArray(data)) {
+      data.forEach((p: any) => {
+        if (p?.id && p?.image) {
+          images[p.id] = p.image;
+          const localProduct = (db.products || []).find((item: any) => item?.id === p.id);
+          if (localProduct && !localProduct.image) localProduct.image = p.image;
+        }
+      });
+      saveDb();
+    }
+  }
+
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.json({ success: true, images });
+});
+
 app.post('/api/state/sync', async (req: any, res: any) => {
   // Track removed IDs for Supabase deletion
   const oldProductIds = (db.products || []).map((p: any) => p.id);
