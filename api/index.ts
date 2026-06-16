@@ -220,8 +220,8 @@ async function pullFromSupabase(defaults: any, light = false) {
   try {
     const defaultProducts = Array.isArray(defaults?.products) ? defaults.products : [];
     const [cats, units, prods, coms, notifs, stockMovs] = await Promise.all([
-      supabase.from('categories').select('name'),
-      supabase.from('unidades').select('name'),
+      supabase.from('categories').select('name,company_id,workspace_id,space_id'),
+      supabase.from('unidades').select('name,company_id,workspace_id,space_id'),
       supabase.from('products').select(light ? 'id,code,name,price,stock,category,updated_at' : '*'),
       supabase.from('comandas').select('*').order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').order('timestamp', { ascending: false }).limit(50),
@@ -244,12 +244,24 @@ async function pullFromSupabase(defaults: any, light = false) {
     if (generatedIds.length > 0) {
       await supabase.from('comandas').delete().in('id', generatedIds);
     }
-    const scopedCats = (cats.data || []).map((c: any) => c.name);
-    const scopedUnits = (units.data || []).map((u: any) => u.name);
+    const catsByScope: Record<string, string[]> = {};
+    const unitsByScope: Record<string, string[]> = {};
+    for (const c of (cats.data || [])) {
+      const sk = getScopeKey({ companyId: c.company_id, workspaceId: c.workspace_id, spaceId: c.space_id });
+      if (!catsByScope[sk]) catsByScope[sk] = [];
+      catsByScope[sk].push(c.name);
+    }
+    for (const u of (units.data || [])) {
+      const sk = getScopeKey({ companyId: u.company_id, workspaceId: u.workspace_id, spaceId: u.space_id });
+      if (!unitsByScope[sk]) unitsByScope[sk] = [];
+      unitsByScope[sk].push(u.name);
+    }
+    if (Object.keys(catsByScope).length === 0) catsByScope[getScopeKey(DEFAULT_SCOPE)] = [];
+    if (Object.keys(unitsByScope).length === 0) unitsByScope[getScopeKey(DEFAULT_SCOPE)] = [];
     return sanitizeState({
       ...defaults,
-      categoriesByScope: { [getScopeKey(DEFAULT_SCOPE)]: scopedCats },
-      unidadesByScope: { [getScopeKey(DEFAULT_SCOPE)]: scopedUnits },
+      categoriesByScope: catsByScope,
+      unidadesByScope: unitsByScope,
       products: (prods.data || []).map((p: any) => {
         const localProduct = defaultProducts.find((local: any) => local?.id === p.id);
         return {
@@ -297,11 +309,25 @@ async function syncToSupabase() {
       }
     };
 
-    const allCats = Object.values(db.categoriesByScope || {}).flat();
-    const allUnits = Object.values(db.unidadesByScope || {}).flat();
+    const catsByScope = db.categoriesByScope || {};
+    const unitsByScope = db.unidadesByScope || {};
+    const catRows: any[] = [];
+    const unitRows: any[] = [];
+    for (const scopeKey of Object.keys(catsByScope)) {
+      const [companyId, workspaceId, spaceId] = scopeKey.split(':');
+      for (const name of (catsByScope[scopeKey] || [])) {
+        catRows.push({ company_id: companyId, workspace_id: workspaceId, space_id: spaceId, name });
+      }
+    }
+    for (const scopeKey of Object.keys(unitsByScope)) {
+      const [companyId, workspaceId, spaceId] = scopeKey.split(':');
+      for (const name of (unitsByScope[scopeKey] || [])) {
+        unitRows.push({ company_id: companyId, workspace_id: workspaceId, space_id: spaceId, name });
+      }
+    }
     await Promise.all([
-      upsertTable('categories', 'name', allCats.map((n: string) => ({ name: n }))),
-      upsertTable('unidades', 'name', allUnits.map((n: string) => ({ name: n }))),
+      supabase.from('categories').upsert(catRows, { onConflict: 'company_id,workspace_id,space_id,name' }),
+      supabase.from('unidades').upsert(unitRows, { onConflict: 'company_id,workspace_id,space_id,name' }),
       upsertTable('products', 'id', db.products.map((p: any) => ({
         company_id: p.companyId || DEFAULT_SCOPE.companyId,
         workspace_id: p.workspaceId || DEFAULT_SCOPE.workspaceId,
@@ -631,12 +657,19 @@ app.post('/api/state/sync', async (req: any, res: any) => {
     const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
     const removedNotificationIds = oldNotificationIds.filter((id: string) => !(db.notifications || []).some((n: any) => n.id === id));
     const removedStockMovementIds = oldStockMovementIds.filter((id: string) => !(db.stockMovements || []).some((m: any) => m.id === id));
+    const [scopeCompanyId, scopeWorkspaceId, scopeSpaceId] = sk.split(':');
     const deletePromises: Promise<any>[] = [];
     if (removedProductIds.length > 0) deletePromises.push(supabase.from('products').delete().in('id', removedProductIds));
     if (removedComandaIds.length > 0) deletePromises.push(supabase.from('comandas').delete().in('id', removedComandaIds));
     if (removedNotificationIds.length > 0) deletePromises.push(supabase.from('notifications').delete().in('id', removedNotificationIds));
     if (removedStockMovementIds.length > 0) deletePromises.push(supabase.from('stock_movements').delete().in('id', removedStockMovementIds));
-    if (await Promise.all(deletePromises).then(() => false).catch(() => true)) {}
+    if (oldCategoryNames.length > 0) {
+      deletePromises.push(supabase.from('categories').delete().match({ company_id: scopeCompanyId, workspace_id: scopeWorkspaceId, space_id: scopeSpaceId }).in('name', oldCategoryNames));
+    }
+    if (oldUnitNames.length > 0) {
+      deletePromises.push(supabase.from('unidades').delete().match({ company_id: scopeCompanyId, workspace_id: scopeWorkspaceId, space_id: scopeSpaceId }).in('name', oldUnitNames));
+    }
+    await Promise.all(deletePromises).catch((e) => console.error('[SalesFlow] Supabase delete failed:', e?.message));
   }
 
   await syncToSupabase();

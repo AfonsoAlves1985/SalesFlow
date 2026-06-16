@@ -1304,6 +1304,8 @@ export default function App() {
     localStorage.setItem('salesflow_active_workspace_id', activeWorkspaceId);
     localStorage.setItem('salesflow_active_space_id', activeSpaceId);
     setSelectedComandaId(null);
+    setCategoriesByScope(prev => prev[scopeKey] ? prev : { ...prev, [scopeKey]: [] });
+    setUnidadesByScope(prev => prev[scopeKey] ? prev : { ...prev, [scopeKey]: [] });
   }, [activeCompanyId, activeWorkspaceId, activeSpaceId]);
 
   // Synchronize operating unit with the units catalog list
@@ -3664,13 +3666,15 @@ export default function App() {
                     </div>
                   </div>
                 ) : activeAdminSubTab === 'frentes' ? (
-                  <ScopeManagement
+                   <ScopeManagement
                     companies={companies}
                     workspaces={workspaces}
                     spaces={spaces}
                     setCompanies={setCompanies}
                     setWorkspaces={setWorkspaces}
                     setSpaces={setSpaces}
+                    setCategoriesByScope={setCategoriesByScope}
+                    setUnidadesByScope={setUnidadesByScope}
                     activeCompanyId={activeCompanyId}
                     activeWorkspaceId={activeWorkspaceId}
                     activeSpaceId={activeSpaceId}

@@ -9,14 +9,19 @@ interface ScopeManagementProps {
   setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
   setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
   setSpaces: React.Dispatch<React.SetStateAction<Space[]>>;
+  setCategoriesByScope: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
+  setUnidadesByScope: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
   activeCompanyId: string;
   activeWorkspaceId: string;
   activeSpaceId: string;
 }
 
+const scopeKeyHelper = (cId: string, wId: string, sId: string) => `${cId}:${wId}:${sId}`;
+
 export default function ScopeManagement({
   companies, workspaces, spaces,
   setCompanies, setWorkspaces, setSpaces,
+  setCategoriesByScope, setUnidadesByScope,
   activeCompanyId, activeWorkspaceId, activeSpaceId
 }: ScopeManagementProps) {
 
@@ -175,6 +180,9 @@ export default function ScopeManagement({
       status: 'active'
     };
     setSpaces(prev => [...prev, space]);
+    const sk = scopeKeyHelper(newSpaceCompanyId, newSpaceWorkspaceId, slug);
+    setCategoriesByScope(prev => { if (prev[sk]) return prev; return { ...prev, [sk]: [] }; });
+    setUnidadesByScope(prev => { if (prev[sk]) return prev; return { ...prev, [sk]: [] }; });
     setNewSpaceName('');
   };
 
