@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SystemUser } from '../types';
+import { SystemUser, USER_ROLE_LABELS, UserRole } from '../types';
 import { 
   Users, 
   UserPlus, 
@@ -18,6 +18,47 @@ import {
   Send,
   ExternalLink
 } from 'lucide-react';
+
+const ROLE_OPTIONS: Array<{ role: UserRole; description: string; tone: string; selectedTone: string; iconTone: string }> = [
+  {
+    role: 'cashier',
+    description: 'Operação diária: comandas, PDV, abertura/fechamento de caixa e recebimentos.',
+    tone: 'text-indigo-600',
+    selectedTone: 'bg-indigo-50/75 border-indigo-400 ring-2 ring-indigo-500/10',
+    iconTone: 'bg-indigo-600 text-white'
+  },
+  {
+    role: 'stock',
+    description: 'Cadastro de produtos, estoque, categorias, fornecedores e conferência de margem.',
+    tone: 'text-emerald-600',
+    selectedTone: 'bg-emerald-50/75 border-emerald-400 ring-2 ring-emerald-500/10',
+    iconTone: 'bg-emerald-600 text-white'
+  },
+  {
+    role: 'finance',
+    description: 'Fluxo financeiro, recebíveis, caixa, comandas e relatórios de fechamento.',
+    tone: 'text-sky-600',
+    selectedTone: 'bg-sky-50/75 border-sky-400 ring-2 ring-sky-500/10',
+    iconTone: 'bg-sky-600 text-white'
+  },
+  {
+    role: 'manager',
+    description: 'Gestão operacional ampla sem manutenção de usuários e reset administrativo.',
+    tone: 'text-purple-600',
+    selectedTone: 'bg-purple-50/75 border-purple-400 ring-2 ring-purple-500/10',
+    iconTone: 'bg-purple-600 text-white'
+  },
+  {
+    role: 'admin',
+    description: 'Acesso completo: operação, relatórios, estoque, auditoria, usuários e configurações críticas.',
+    tone: 'text-amber-600',
+    selectedTone: 'bg-amber-50/75 border-amber-400 ring-2 ring-amber-500/10',
+    iconTone: 'bg-amber-500 text-slate-900'
+  }
+];
+
+const getRoleLabel = (role: UserRole) => USER_ROLE_LABELS[role] || role;
+const getRoleTone = (role: UserRole) => ROLE_OPTIONS.find(option => option.role === role)?.tone || 'text-indigo-600';
 
 interface AccessManagementProps {
   users: SystemUser[];
@@ -54,7 +95,7 @@ export default function AccessManagement({
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'cashier'>('cashier');
+  const [role, setRole] = useState<UserRole>('cashier');
   const [status, setStatus] = useState<'active' | 'invited'>('invited');
   const [password, setPassword] = useState('');
 
@@ -270,9 +311,9 @@ export default function AccessManagement({
                       </td>
                       <td className="py-3.5 px-4 text-slate-600 font-mono">{user.email}</td>
                       <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center gap-1 font-bold ${user.role === 'admin' ? 'text-amber-600' : 'text-indigo-600'}`}>
+                        <span className={`inline-flex items-center gap-1 font-bold ${getRoleTone(user.role)}`}>
                           <Shield className="w-3.5 h-3.5" />
-                          {user.role === 'admin' ? 'Co-Administrador' : 'Operador de Caixa'}
+                          {getRoleLabel(user.role)}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
@@ -581,36 +622,29 @@ export default function AccessManagement({
               {/* Roles: Permissionamento */}
               <div>
                 <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wide mb-2">Permissionamento (Controle de Acessos)</label>
-                <div className="grid grid-cols-1 gap-2.5">
-                  <div 
-                    onClick={() => setRole('cashier')}
-                    className={`p-3.5 rounded-2xl border transition cursor-pointer select-none flex gap-3 items-start ${role === 'cashier' ? 'bg-indigo-50/75 border-indigo-400 ring-2 ring-indigo-500/10' : 'bg-white border-slate-200 hover:border-slate-300'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${role === 'cashier' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <strong className="text-xs text-slate-800 block font-bold">Operador de Caixa</strong>
-                      <span className="text-[10px] text-slate-500 block mt-0.5 leading-normal font-medium">
-                        Focado em rotinas comerciais: abertura/fechamento de caixas, lançamentos, pagamentos de comandas e consumo geral.
-                      </span>
-                    </div>
-                  </div>
+                <div className="grid grid-cols-1 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  {ROLE_OPTIONS.map((option) => {
+                    const isSelected = role === option.role;
+                    const RoleIcon = option.role === 'cashier' ? Users : Shield;
 
-                  <div 
-                    onClick={() => setRole('admin')}
-                    className={`p-3.5 rounded-2xl border transition cursor-pointer select-none flex gap-3 items-start ${role === 'admin' ? 'bg-amber-50/75 border-amber-400 ring-2 ring-amber-500/10' : 'bg-white border-slate-200 hover:border-slate-300'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${role === 'admin' ? 'bg-amber-500 text-slate-900' : 'bg-slate-100 text-slate-500'}`}>
-                      <Shield className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <strong className="text-xs text-slate-800 block font-bold">Co-Administrador</strong>
-                      <span className="text-[10px] text-slate-500 block mt-0.5 leading-normal font-medium">
-                        Acesso geral à operação de faturamento, relatórios estatísticos, alteração de estoque, e configurações estruturais.
-                      </span>
-                    </div>
-                  </div>
+                    return (
+                      <div
+                        key={option.role}
+                        onClick={() => setRole(option.role)}
+                        className={`p-3.5 rounded-2xl border transition cursor-pointer select-none flex gap-3 items-start ${isSelected ? option.selectedTone : 'bg-white border-slate-200 hover:border-slate-300'}`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? option.iconTone : 'bg-slate-100 text-slate-500'}`}>
+                          <RoleIcon className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <strong className="text-xs text-slate-800 block font-bold">{getRoleLabel(option.role)}</strong>
+                          <span className="text-[10px] text-slate-500 block mt-0.5 leading-normal font-medium">
+                            {option.description}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -681,7 +715,7 @@ export default function AccessManagement({
               <div className="flex justify-between items-center border-b border-slate-900 pb-2">
                 <span className="text-[10px] text-slate-400 font-black uppercase">Permissionamento</span>
                 <span className="font-bold text-amber-500">
-                  {newlyCreatedUserForInvite.role === 'admin' ? 'Co-Administrador' : 'Operador de Caixa'}
+                  {getRoleLabel(newlyCreatedUserForInvite.role)}
                 </span>
               </div>
               <div className="flex justify-between items-center">

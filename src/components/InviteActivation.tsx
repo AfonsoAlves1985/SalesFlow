@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SystemUser, ThemeType } from '../types';
+import { SystemUser, ThemeType, USER_ROLE_LABELS } from '../types';
 import { Shield, Sparkles, Key, CheckCircle, UserCheck, ArrowLeft, ArrowRight, Compass } from 'lucide-react';
 
 interface InviteActivationProps {
@@ -89,7 +89,7 @@ export default function InviteActivation({ invitedUser, onActivate, onCancel }: 
           <div className="min-w-0">
             <span className="text-[10px] uppercase font-black tracking-widest text-frz-primary block">Cargo Atribuído</span>
             <strong className="text-zinc-200 text-xs mt-0.5 block truncate">
-              {invitedUser.role === 'admin' ? 'Co-Administrador' : 'Operador de Caixa'}
+              {USER_ROLE_LABELS[invitedUser.role] || invitedUser.role}
             </strong>
             <span className="text-[10px] text-zinc-400 font-mono block truncate mt-0.5 font-semibold">{invitedUser.email}</span>
           </div>

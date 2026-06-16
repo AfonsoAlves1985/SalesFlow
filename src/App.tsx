@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, CashierCashMovement, UserSession, SystemUser, StockMovement, AuditLogEntry, AuditEntityType, Receivable } from './types';
+import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, CashierCashMovement, UserSession, SystemUser, StockMovement, AuditLogEntry, AuditEntityType, Receivable, USER_ROLE_LABELS, UserRole } from './types';
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS, MONTHS } from './initialData';
 import { 
   Plus, 
@@ -56,6 +56,18 @@ import DirectPOSView from './components/DirectPOSView';
 
 import { testSupabaseConnection } from './lib/supabase';
 import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase, subscribeToSupabaseRealtime } from './lib/supabaseSync';
+
+type AdminSubTab = 'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'auditoria' | 'pdv';
+
+const ROLE_TAB_ACCESS: Record<UserRole, AdminSubTab[]> = {
+  admin: ['comandas', 'pdv', 'caixa_notificacoes', 'estoque', 'fluxo', 'acessos', 'auditoria'],
+  manager: ['comandas', 'pdv', 'caixa_notificacoes', 'estoque', 'fluxo', 'auditoria'],
+  finance: ['comandas', 'caixa_notificacoes', 'fluxo'],
+  stock: ['estoque'],
+  cashier: ['comandas', 'pdv', 'caixa_notificacoes']
+};
+
+const getUserRoleLabel = (role?: UserRole) => role ? (USER_ROLE_LABELS[role] || role) : '';
 
 export default function App() {
   const initialComandaParam = typeof window !== 'undefined'
@@ -143,7 +155,7 @@ export default function App() {
   // Active states
   const [selectedComandaId, setSelectedComandaId] = useState<string | null>(null);
   const [clientActiveComandaId, setClientActiveComandaId] = useState<string | null>(initialComandaParam);
-  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'auditoria' | 'pdv'>('comandas');
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState<AdminSubTab>('comandas');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // System Users List for Access Management
@@ -188,6 +200,18 @@ export default function App() {
 
   // User Session Management
   const [session, setSession] = useState<UserSession | null>(null);
+  const hasTabAccess = (tab: AdminSubTab) => {
+    if (!session) return false;
+    return ROLE_TAB_ACCESS[session.role]?.includes(tab) || false;
+  };
+
+  useEffect(() => {
+    if (!session) return;
+    if (hasTabAccess(activeAdminSubTab)) return;
+
+    setActiveAdminSubTab(ROLE_TAB_ACCESS[session.role]?.[0] || 'comandas');
+    setSelectedComandaId(null);
+  }, [session?.role, activeAdminSubTab]);
   
   // Cashier Shifts Management (abertura e fechamento de caixa)
   const [activeShift, setActiveShift] = useState<CashierShift | null>(null);
@@ -1309,6 +1333,10 @@ export default function App() {
         categoria: updatedProduct.category,
         estoqueAnterior: old?.stock,
         estoqueNovo: updatedProduct.stock,
+        estoqueMinimo: updatedProduct.minStock,
+        fornecedor: updatedProduct.supplier,
+        custoAnterior: old?.costPrice,
+        custoNovo: updatedProduct.costPrice,
         precoAnterior: old?.price,
         precoNovo: updatedProduct.price
       }
@@ -1326,7 +1354,7 @@ export default function App() {
         entityId: product.id,
         entityLabel: product.name,
         summary: `Excluiu produto ${product.name}.`,
-        details: { codigo: product.code, estoque: product.stock, preco: product.price }
+        details: { codigo: product.code, estoque: product.stock, estoqueMinimo: product.minStock, fornecedor: product.supplier, custo: product.costPrice, preco: product.price }
       });
     }
   };
@@ -1917,7 +1945,7 @@ export default function App() {
         type: 'Invited',
         channel: 'EMAIL',
         subject: `Convite de Acesso Criado | SalesFlow`,
-        body: `Olá ${user.name},\n\nVocê acaba de ser convidado para operar o sistema SalesFlow com o cargo de: ${user.role === 'admin' ? 'Co-Administrador' : 'Operador de Caixa'}.\n\nSua senha temporária de primeiro acesso é: "${user.password || '123'}"\n\nUtilize este link de ativação seguro para cadastrar sua senha definitiva: ${inviteUrl}\n\nSalesFlow Security Team`
+        body: `Olá ${user.name},\n\nVocê acaba de ser convidado para operar o sistema SalesFlow com o cargo de: ${getUserRoleLabel(user.role)}.\n\nSua senha temporária de primeiro acesso é: "${user.password || '123'}"\n\nUtilize este link de ativação seguro para cadastrar sua senha definitiva: ${inviteUrl}\n\nSalesFlow Security Team`
       };
 
       setNotifications(prev => [newNotif, ...prev]);
@@ -1929,7 +1957,7 @@ export default function App() {
         {
           id: toastId,
           title: `✉️ Convite Enviado para ${user.name}`,
-          description: `Cargo: ${user.role === 'admin' ? 'Co-Administrador' : 'Operador'} | Enviado para: ${email}`,
+          description: `Cargo: ${getUserRoleLabel(user.role)} | Enviado para: ${email}`,
           type: 'email'
         }
       ]);
@@ -2804,7 +2832,7 @@ export default function App() {
                     <div>
                       <div className="text-xs font-bold text-white flex items-center gap-2">
                         {session.username}
-                        <span className="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-black uppercase">{session.role}</span>
+                        <span className="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-black uppercase">{getUserRoleLabel(session.role)}</span>
                       </div>
                       <p className="text-[10px] text-slate-400">Sessão Comercial Autenticada</p>
                     </div>
@@ -2912,8 +2940,10 @@ export default function App() {
                     </button>
 
                     <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+                      {(hasTabAccess('comandas') || hasTabAccess('pdv') || hasTabAccess('caixa_notificacoes')) && (
                       <div className="space-y-1">
                         {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Operação</span>}
+                        {hasTabAccess('comandas') && (
                         <button
                           onClick={() => {
                             setActiveAdminSubTab('comandas');
@@ -2937,6 +2967,8 @@ export default function App() {
                             </span>
                           )}
                         </button>
+                        )}
+                        {hasTabAccess('pdv') && (
                         <button
                           onClick={() => {
                             setActiveAdminSubTab('pdv');
@@ -2958,6 +2990,8 @@ export default function App() {
                             </span>
                           )}
                         </button>
+                        )}
+                        {hasTabAccess('caixa_notificacoes') && (
                         <button
                           onClick={() => {
                             setActiveAdminSubTab('caixa_notificacoes');
@@ -2980,10 +3014,14 @@ export default function App() {
                             </span>
                           )}
                         </button>
+                        )}
                       </div>
+                      )}
 
+                      {(hasTabAccess('estoque') || hasTabAccess('fluxo')) && (
                       <div className="space-y-1">
                         {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Compras</span>}
+                        {hasTabAccess('estoque') && (
                         <button
                           onClick={() => {
                             setActiveAdminSubTab('estoque');
@@ -3006,6 +3044,8 @@ export default function App() {
                             </span>
                           )}
                         </button>
+                        )}
+                        {hasTabAccess('fluxo') && (
                         <button
                           onClick={() => {
                             setActiveAdminSubTab('fluxo');
@@ -3028,11 +3068,14 @@ export default function App() {
                             </span>
                           )}
                         </button>
+                        )}
                       </div>
+                      )}
 
-                      {session?.role === 'admin' && (
+                      {(hasTabAccess('acessos') || hasTabAccess('auditoria')) && (
                         <div className="space-y-1">
                           {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Administração</span>}
+                          {hasTabAccess('acessos') && (
                           <button
                             onClick={() => {
                               setActiveAdminSubTab('acessos');
@@ -3055,6 +3098,8 @@ export default function App() {
                               </span>
                             )}
                           </button>
+                          )}
+                          {hasTabAccess('auditoria') && (
                           <button
                             onClick={() => {
                               setActiveAdminSubTab('auditoria');
@@ -3077,6 +3122,7 @@ export default function App() {
                               </span>
                             )}
                           </button>
+                          )}
                         </div>
                       )}
                     </nav>
@@ -3146,7 +3192,17 @@ export default function App() {
                 )}
 
                 {/* Sub-Tab rendering logic */}
-                {activeAdminSubTab === 'pdv' ? (
+                {!hasTabAccess(activeAdminSubTab) ? (
+                  <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-8 text-center animate-fadeIn">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-sm font-black text-slate-900">Acesso Restrito</h3>
+                    <p className="text-xs text-slate-500 mt-1 font-semibold">
+                      Seu perfil não possui permissão para este módulo.
+                    </p>
+                  </div>
+                ) : activeAdminSubTab === 'pdv' ? (
                   <DirectPOSView
                     products={products}
                     operatingUnit={operatingUnit}
@@ -3312,7 +3368,7 @@ export default function App() {
                                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 font-bold">
                                   <span>Usuário: {log.actorName}{log.actorLogin ? ` (@${log.actorLogin})` : ''}</span>
                                   <span>Alvo: {log.entityLabel}</span>
-                                  {log.actorRole && <span>Perfil: {log.actorRole}</span>}
+                                  {log.actorRole && <span>Perfil: {getUserRoleLabel(log.actorRole)}</span>}
                                 </div>
                               </div>
                               <div className="md:text-right shrink-0">

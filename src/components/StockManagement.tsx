@@ -31,7 +31,10 @@ export default function StockManagement({
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState(0);
+  const [costPrice, setCostPrice] = useState(0);
   const [stock, setStock] = useState(0);
+  const [minStock, setMinStock] = useState(10);
+  const [supplier, setSupplier] = useState('');
   const [category, setCategory] = useState(categories[0] || '');
   const [image, setImage] = useState<string>('');
   const [imageUrlInput, setImageUrlInput] = useState('');
@@ -42,7 +45,10 @@ export default function StockManagement({
     setCode(product.code);
     setName(product.name);
     setPrice(product.price);
+    setCostPrice(Number(product.costPrice || 0));
     setStock(product.stock);
+    setMinStock(Number(product.minStock ?? 10));
+    setSupplier(product.supplier || '');
     setCategory(product.category);
     setImage(product.image || '');
     setImageUrlInput(product.image || '');
@@ -54,7 +60,10 @@ export default function StockManagement({
     setCode(`PROD-${Math.floor(100 + Math.random() * 900)}`);
     setName('');
     setPrice(10.00);
+    setCostPrice(0);
     setStock(50);
+    setMinStock(10);
+    setSupplier('');
     setCategory(categories[0] || '');
     setImage('');
     setImageUrlInput('');
@@ -157,12 +166,18 @@ export default function StockManagement({
       return;
     }
 
+    const existingProduct = editingId ? products.find(p => p.id === editingId) : null;
+
     onSaveProduct({
+      ...existingProduct,
       id: editingId || `p-${Date.now()}`,
-      code,
-      name,
+      code: code.trim(),
+      name: name.trim(),
       price: Number(price),
+      costPrice: Number(costPrice || 0),
       stock: Number(stock),
+      minStock: Number(minStock || 0),
+      supplier: supplier.trim() || undefined,
       category,
       image: image || undefined
     });
@@ -176,7 +191,10 @@ export default function StockManagement({
     setCode('');
     setName('');
     setPrice(0);
+    setCostPrice(0);
     setStock(0);
+    setMinStock(10);
+    setSupplier('');
     setCategory(categories[0] || '');
     setImage('');
     setImageUrlInput('');
@@ -185,8 +203,19 @@ export default function StockManagement({
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
+    p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.supplier || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const getMinimumStock = (product: Product) => Number(product.minStock ?? 10);
+  const lowStockProducts = products.filter(product => product.stock > 0 && product.stock <= getMinimumStock(product));
+  const outOfStockProducts = products.filter(product => product.stock === 0);
+  const getMarginPercent = (product: Product) => {
+    const salePrice = Number(product.price || 0);
+    const cost = Number(product.costPrice || 0);
+    if (!salePrice || !cost) return null;
+    return ((salePrice - cost) / salePrice) * 100;
+  };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
@@ -226,12 +255,35 @@ export default function StockManagement({
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
           <input
             type="text"
-            placeholder="Buscar produto por nome, código ou categoria..."
+            placeholder="Buscar produto por nome, código, categoria ou fornecedor..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
           />
         </div>
+
+        {(outOfStockProducts.length > 0 || lowStockProducts.length > 0) && (
+          <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {outOfStockProducts.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-100 flex items-start gap-2.5 text-xs">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-rose-800 font-black block">{outOfStockProducts.length} produto(s) esgotado(s)</strong>
+                  <span className="text-rose-700 font-semibold">Repor antes de liberar novas vendas ou comandas.</span>
+                </div>
+              </div>
+            )}
+            {lowStockProducts.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-100 flex items-start gap-2.5 text-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-amber-800 font-black block">{lowStockProducts.length} produto(s) abaixo do mínimo</strong>
+                  <span className="text-amber-700 font-semibold">O limite é individual por produto e fica salvo no cadastro.</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Toggle Form Overlay / Embedded */}
         {isFormOpen && (
@@ -277,6 +329,18 @@ export default function StockManagement({
               </div>
 
               <div>
+                <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Custo Unitário (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={costPrice}
+                  onChange={(e) => setCostPrice(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
                 <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Estoque Disponível</label>
                 <input
                   type="number"
@@ -285,6 +349,17 @@ export default function StockManagement({
                   onChange={(e) => setStock(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-indigo-500"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Estoque Mínimo</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={minStock}
+                  onChange={(e) => setMinStock(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
 
@@ -299,6 +374,17 @@ export default function StockManagement({
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="md:col-span-2 lg:col-span-2">
+                <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Fornecedor</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Distribuidora Central"
+                  value={supplier}
+                  onChange={(e) => setSupplier(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-indigo-500"
+                />
               </div>
 
               <div className="md:col-span-2 lg:col-span-5">
@@ -400,6 +486,8 @@ export default function StockManagement({
                 <th className="py-3 px-4">Código</th>
                 <th className="py-3 px-4">Produto</th>
                 <th className="py-3 px-4">Categoria</th>
+                <th className="py-3 px-4">Fornecedor</th>
+                <th className="py-3 px-4 text-right">Custo / Margem</th>
                 <th className="py-3 px-4 text-right">Preço</th>
                 <th className="py-3 px-4 text-center">Disponibilidade (Estoque)</th>
                 <th className="py-3 px-4 text-right">Ações</th>
@@ -408,14 +496,16 @@ export default function StockManagement({
             <tbody className="divide-y divide-slate-50 text-slate-700 font-medium">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400 font-normal">
+                  <td colSpan={9} className="text-center py-8 text-slate-400 font-normal">
                     Nenhum produto cadastrado que corresponda à busca.
                   </td>
                 </tr>
               ) : (
                 filteredProducts.map((p) => {
-                  const isLowStock = p.stock < 10;
+                  const productMinStock = getMinimumStock(p);
+                  const isLowStock = p.stock <= productMinStock;
                   const isOut = p.stock === 0;
+                  const marginPercent = getMarginPercent(p);
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition">
@@ -435,6 +525,15 @@ export default function StockManagement({
                           {p.category}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-slate-600 font-semibold">
+                        {p.supplier || <span className="text-slate-400 font-medium">Não informado</span>}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="font-bold text-slate-800">R$ {Number(p.costPrice || 0).toFixed(2)}</div>
+                        <div className={`text-[10px] font-black ${marginPercent === null ? 'text-slate-400' : marginPercent < 20 ? 'text-rose-600' : marginPercent < 35 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {marginPercent === null ? 'Margem n/d' : `${marginPercent.toFixed(1)}% margem`}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-right font-bold text-slate-900">
                         R$ {Number(p.price || 0).toFixed(2)}
                       </td>
@@ -444,6 +543,7 @@ export default function StockManagement({
                           <span className={`font-bold ${isOut ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-800'}`}>
                             {p.stock} unidades
                           </span>
+                          <span className="text-[9px] text-slate-400 font-bold">mín. {productMinStock}</span>
                           {isLowStock && !isOut && (
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-500 animate-pulse" title="Estoque baixo!" />
                           )}

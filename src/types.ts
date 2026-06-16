@@ -6,11 +6,24 @@ export interface Product {
   code: string;
   name: string;
   price: number;
+  costPrice?: number;
   stock: number;
+  minStock?: number;
+  supplier?: string;
   category: string;
   image?: string;
   updatedAt?: string;
 }
+
+export type UserRole = 'admin' | 'manager' | 'finance' | 'stock' | 'cashier';
+
+export const USER_ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Co-Administrador',
+  manager: 'Gerente Operacional',
+  finance: 'Financeiro',
+  stock: 'Estoquista',
+  cashier: 'Operador de Caixa'
+};
 
 export interface OrderedItem {
   id: string;
@@ -68,7 +81,7 @@ export interface UserSession {
   id?: string;
   username: string;
   loginName: string;
-  role: 'admin' | 'cashier';
+  role: UserRole;
   email?: string;
   avatar?: string;
 }
@@ -78,7 +91,7 @@ export interface SystemUser {
   username: string;
   name: string;
   email: string;
-  role: 'admin' | 'cashier';
+  role: UserRole;
   status: 'active' | 'invited';
   password?: string;
   invitationCode?: string;
