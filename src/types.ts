@@ -1,7 +1,69 @@
 export type ClientType = 'Aluno' | 'Colaborador' | 'Diretoria';
 export type PaymentStatus = 'Pendente' | 'Pago';
 
-export interface Product {
+export interface ScopeFields {
+  companyId?: string;
+  workspaceId?: string;
+  spaceId?: string;
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  status: 'active' | 'inactive';
+}
+
+export interface Workspace extends ScopeFields {
+  id: string;
+  companyId: string;
+  name: string;
+  slug: string;
+  status: 'active' | 'inactive';
+}
+
+export interface Space extends ScopeFields {
+  id: string;
+  companyId: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  type: 'caixa' | 'evento' | 'loja' | 'cantina' | 'outro';
+  status: 'active' | 'inactive';
+}
+
+export const DEFAULT_COMPANY: Company = {
+  id: 'grupo-frz',
+  name: 'Grupo FRZ',
+  slug: 'grupo-frz',
+  status: 'active'
+};
+
+export const DEFAULT_WORKSPACE: Workspace = {
+  id: 'febracis-pa',
+  companyId: DEFAULT_COMPANY.id,
+  name: 'Febracis PA',
+  slug: 'febracis-pa',
+  status: 'active'
+};
+
+export const DEFAULT_SPACE: Space = {
+  id: 'caixa-principal',
+  companyId: DEFAULT_COMPANY.id,
+  workspaceId: DEFAULT_WORKSPACE.id,
+  name: 'Caixa Principal',
+  slug: 'caixa-principal',
+  type: 'caixa',
+  status: 'active'
+};
+
+export const DEFAULT_SCOPE: Required<ScopeFields> = {
+  companyId: DEFAULT_COMPANY.id,
+  workspaceId: DEFAULT_WORKSPACE.id,
+  spaceId: DEFAULT_SPACE.id
+};
+
+export interface Product extends ScopeFields {
   id: string;
   code: string;
   name: string;
@@ -37,7 +99,7 @@ export interface OrderedItem {
   signedAt?: string;
 }
 
-export interface Comanda {
+export interface Comanda extends ScopeFields {
   id: string;
   clientName: string;
   clientType: ClientType;
@@ -54,7 +116,7 @@ export interface Comanda {
   closureReminderActive?: boolean;
 }
 
-export interface CashierShift {
+export interface CashierShift extends ScopeFields {
   id: string;
   openedAt: string;
   openedBy: string;
@@ -84,6 +146,9 @@ export interface UserSession {
   role: UserRole;
   email?: string;
   avatar?: string;
+  companyId?: string;
+  workspaceIds?: string[];
+  spaceIds?: string[];
 }
 
 export interface SystemUser {
@@ -97,10 +162,13 @@ export interface SystemUser {
   invitationCode?: string;
   needsPasswordChange?: boolean;
   avatar?: string;
+  companyId?: string;
+  workspaceIds?: string[];
+  spaceIds?: string[];
   createdAt: string;
 }
 
-export interface StockMovement {
+export interface StockMovement extends ScopeFields {
   id: string;
   productId: string;
   productName: string;
@@ -118,7 +186,7 @@ export type AuditActionType = 'criou' | 'editou' | 'excluiu' | 'abriu' | 'fechou
 
 export type ReceivableStatus = 'Pendente' | 'Parcial' | 'Pago' | 'Cancelado';
 
-export interface Receivable {
+export interface Receivable extends ScopeFields {
   id: string;
   comandaId: string;
   clientName: string;
@@ -137,7 +205,7 @@ export interface Receivable {
   notes?: string;
 }
 
-export interface AuditLogEntry {
+export interface AuditLogEntry extends ScopeFields {
   id: string;
   timestamp: string;
   actorId?: string;

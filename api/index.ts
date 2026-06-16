@@ -7,6 +7,17 @@ const isVercel = process.env.VERCEL === '1';
 const DB_FILE = isVercel
   ? path.join('/tmp', 'data-store.json')
   : path.join(process.cwd(), 'data-store.json');
+const DEFAULT_SCOPE = { companyId: 'grupo-frz', workspaceId: 'febracis-pa', spaceId: 'caixa-principal' };
+
+function withDefaultScope(item: any) {
+  return { ...DEFAULT_SCOPE, ...(item || {}) };
+}
+
+function sameScope(a: any, b: any) {
+  return (a?.companyId || DEFAULT_SCOPE.companyId) === (b?.companyId || DEFAULT_SCOPE.companyId)
+    && (a?.workspaceId || DEFAULT_SCOPE.workspaceId) === (b?.workspaceId || DEFAULT_SCOPE.workspaceId)
+    && (a?.spaceId || DEFAULT_SCOPE.spaceId) === (b?.spaceId || DEFAULT_SCOPE.spaceId);
+}
 
 function isGeneratedModelComanda(c: any) {
   const name = String(c?.clientName || '').trim();
@@ -21,10 +32,14 @@ function isGeneratedModelComanda(c: any) {
 function sanitizeState(state: any) {
   return {
     ...state,
+    products: Array.isArray(state?.products) ? state.products.map(withDefaultScope) : [],
+    stockMovements: Array.isArray(state?.stockMovements) ? state.stockMovements.map(withDefaultScope) : [],
+    notifications: Array.isArray(state?.notifications) ? state.notifications.map(withDefaultScope) : [],
     auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs.slice(0, 500) : [],
-    receivables: Array.isArray(state?.receivables) ? state.receivables : [],
+    receivables: Array.isArray(state?.receivables) ? state.receivables.map(withDefaultScope) : [],
     comandas: Array.isArray(state?.comandas)
       ? state.comandas.filter((c: any) => !isGeneratedModelComanda(c))
+        .map(withDefaultScope)
       : []
   };
 }
@@ -199,6 +214,9 @@ async function pullFromSupabase(defaults: any, light = false) {
       supabase.from('stock_movements').select('*').order('timestamp', { ascending: false }).limit(200),
     ]);
     const mappedComandas = (coms.data || []).map((c: any) => ({
+      companyId: c.company_id || DEFAULT_SCOPE.companyId,
+      workspaceId: c.workspace_id || DEFAULT_SCOPE.workspaceId,
+      spaceId: c.space_id || DEFAULT_SCOPE.spaceId,
       id: c.id, clientName: c.client_name, clientType: c.client_type,
       clientEmail: c.client_email, clientPhone: c.client_phone,
       courseOrTraining: c.course_or_training, month: c.month, status: c.status,
@@ -219,6 +237,9 @@ async function pullFromSupabase(defaults: any, light = false) {
       products: (prods.data || []).map((p: any) => {
         const localProduct = defaultProducts.find((local: any) => local?.id === p.id);
         return {
+          companyId: p.company_id || DEFAULT_SCOPE.companyId,
+          workspaceId: p.workspace_id || DEFAULT_SCOPE.workspaceId,
+          spaceId: p.space_id || DEFAULT_SCOPE.spaceId,
           id: p.id, code: p.code, name: p.name,
           price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
           image: light ? localProduct?.image : (p.image || undefined), updatedAt: p.updated_at
@@ -226,11 +247,17 @@ async function pullFromSupabase(defaults: any, light = false) {
       }),
       comandas: mappedComandas,
       notifications: (notifs.data || []).map((n: any) => ({
+        companyId: n.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: n.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: n.space_id || DEFAULT_SCOPE.spaceId,
         id: n.id, timestamp: n.timestamp, recipient: n.recipient,
         course: n.course, contact: n.contact, type: n.type,
         message: n.message, status: n.status, sender: n.sender
       })),
       stockMovements: (stockMovs.data || []).map((m: any) => ({
+        companyId: m.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: m.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: m.space_id || DEFAULT_SCOPE.spaceId,
         id: m.id, productId: m.product_id, productName: m.product_name,
         productCode: m.product_code, type: m.type, quantity: m.quantity,
         price: Number(m.price) || 0, totalValue: Number(m.total_value) || 0,
@@ -258,11 +285,17 @@ async function syncToSupabase() {
       upsertTable('categories', 'name', db.categories.map((n: string) => ({ name: n }))),
       upsertTable('unidades', 'name', db.unidades.map((n: string) => ({ name: n }))),
       upsertTable('products', 'id', db.products.map((p: any) => ({
+        company_id: p.companyId || DEFAULT_SCOPE.companyId,
+        workspace_id: p.workspaceId || DEFAULT_SCOPE.workspaceId,
+        space_id: p.spaceId || DEFAULT_SCOPE.spaceId,
         id: p.id, code: p.code, name: p.name,
         price: Number(p.price) || 0, stock: Number(p.stock) || 0, category: p.category,
         image: p.image || null, updated_at: p.updatedAt || new Date().toISOString()
       }))),
       upsertTable('comandas', 'id', db.comandas.map((c: any) => ({
+        company_id: c.companyId || DEFAULT_SCOPE.companyId,
+        workspace_id: c.workspaceId || DEFAULT_SCOPE.workspaceId,
+        space_id: c.spaceId || DEFAULT_SCOPE.spaceId,
         id: c.id, client_name: c.clientName, client_type: c.clientType,
         client_email: c.clientEmail || null, client_phone: c.clientPhone || null,
         course_or_training: c.courseOrTraining, month: c.month, status: c.status,
@@ -270,11 +303,17 @@ async function syncToSupabase() {
         closure_reminder_active: !!c.closureReminderActive, items: c.items || []
       }))),
       upsertTable('notifications', 'id', db.notifications.map((n: any) => ({
+        company_id: n.companyId || DEFAULT_SCOPE.companyId,
+        workspace_id: n.workspaceId || DEFAULT_SCOPE.workspaceId,
+        space_id: n.spaceId || DEFAULT_SCOPE.spaceId,
         id: n.id, timestamp: n.timestamp, recipient: n.recipient,
         course: n.course, contact: n.contact, type: n.type,
         message: n.message, status: n.status, sender: n.sender || null
       }))),
       upsertTable('stock_movements', 'id', (db.stockMovements || []).map((m: any) => ({
+        company_id: m.companyId || DEFAULT_SCOPE.companyId,
+        workspace_id: m.workspaceId || DEFAULT_SCOPE.workspaceId,
+        space_id: m.spaceId || DEFAULT_SCOPE.spaceId,
         id: m.id, product_id: m.productId, product_name: m.productName,
         product_code: m.productCode, type: m.type, quantity: m.quantity,
         price: Number(m.price) || 0, total_value: Number(m.totalValue) || 0,
@@ -409,6 +448,9 @@ function getStateResponse(light: boolean) {
   const response = !light ? db : {
     ...db,
     products: (db.products || []).map((p: any) => ({
+      companyId: p.companyId || DEFAULT_SCOPE.companyId,
+      workspaceId: p.workspaceId || DEFAULT_SCOPE.workspaceId,
+      spaceId: p.spaceId || DEFAULT_SCOPE.spaceId,
       id: p.id,
       code: p.code,
       name: p.name,
@@ -423,8 +465,8 @@ function getStateResponse(light: boolean) {
 
 function getStateMeta() {
   const source = JSON.stringify({
-    products: (db.products || []).map((p: any) => [p.id, p.stock, p.price, p.category, p.updatedAt]),
-    comandas: (db.comandas || []).map((c: any) => [c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
+    products: (db.products || []).map((p: any) => [p.companyId, p.workspaceId, p.spaceId, p.id, p.stock, p.price, p.category, p.updatedAt]),
+    comandas: (db.comandas || []).map((c: any) => [c.companyId, c.workspaceId, c.spaceId, c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
     notifications: (db.notifications || []).slice(0, 5).map((n: any) => [n.id, n.timestamp, n.status]),
     stockMovements: (db.stockMovements || []).slice(0, 5).map((m: any) => [m.id, m.timestamp]),
     auditLogs: (db.auditLogs || []).slice(0, 5).map((a: any) => [a.id, a.timestamp, a.action, a.entityType]),
@@ -508,16 +550,22 @@ app.post('/api/state/sync', async (req: any, res: any) => {
 
   const incomingState = { ...req.body };
   if (Array.isArray(incomingState.products)) {
-    incomingState.products = mergeProductLists(incomingState.products, db.products || []);
+    incomingState.products = mergeProductLists(incomingState.products.map(withDefaultScope), db.products || []);
   }
   if (Array.isArray(incomingState.comandas)) {
-    incomingState.comandas = mergeComandaLists(incomingState.comandas, db.comandas || []);
+    incomingState.comandas = mergeComandaLists(incomingState.comandas.map(withDefaultScope), db.comandas || []);
   }
   if (Array.isArray(incomingState.auditLogs)) {
-    incomingState.auditLogs = mergeAuditLogs(incomingState.auditLogs, db.auditLogs || []);
+    incomingState.auditLogs = mergeAuditLogs(incomingState.auditLogs.map(withDefaultScope), db.auditLogs || []);
   }
   if (Array.isArray(incomingState.receivables)) {
-    incomingState.receivables = mergeReceivables(incomingState.receivables, db.receivables || []);
+    incomingState.receivables = mergeReceivables(incomingState.receivables.map(withDefaultScope), db.receivables || []);
+  }
+  if (Array.isArray(incomingState.stockMovements)) {
+    incomingState.stockMovements = incomingState.stockMovements.map(withDefaultScope);
+  }
+  if (Array.isArray(incomingState.notifications)) {
+    incomingState.notifications = incomingState.notifications.map(withDefaultScope);
   }
   Object.assign(db, incomingState);
   saveDb();
@@ -556,21 +604,22 @@ app.post('/api/state/sync', async (req: any, res: any) => {
 
 app.post('/api/audit-logs', async (req: any, res: any) => {
   if (!req.body?.id) return res.status(400).json({ error: 'Missing id' });
-  db.auditLogs = mergeAuditLogs([req.body], db.auditLogs || []);
+  db.auditLogs = mergeAuditLogs([withDefaultScope(req.body)], db.auditLogs || []);
   saveDb();
   await bumpRealtimeSignal();
   res.json({ success: true, count: db.auditLogs.length });
 });
 
 app.post('/api/receivables/bulk', async (req: any, res: any) => {
-  if (Array.isArray(req.body)) db.receivables = mergeReceivables(req.body, db.receivables || []);
+  const incoming = Array.isArray(req.body) ? req.body.map(withDefaultScope) : [];
+  if (incoming.length > 0) db.receivables = mergeReceivables(incoming, db.receivables || []);
   saveDb();
   await bumpRealtimeSignal();
   res.json({ success: true, count: db.receivables.length });
 });
 
 app.post('/api/products', async (req: any, res: any) => {
-  const p = { ...req.body, updatedAt: req.body?.updatedAt || new Date().toISOString() };
+  const p = { ...withDefaultScope(req.body), updatedAt: req.body?.updatedAt || new Date().toISOString() };
   if (!p?.id) return res.status(400).json({ error: 'Missing id' });
   const i = db.products.findIndex((x: any) => x.id === p.id);
   if (i >= 0) db.products[i] = preferNewerProduct(p, db.products[i]); else db.products.push(p);
@@ -589,7 +638,14 @@ app.delete('/api/products/:id', async (req: any, res: any) => {
 
 app.post('/api/products/bulk', async (req: any, res: any) => {
   const oldProductIds = (db.products || []).map((p: any) => p.id);
-  if (Array.isArray(req.body)) db.products = mergeProductLists(req.body, db.products || []);
+  const incoming = Array.isArray(req.body) ? req.body.map(withDefaultScope) : [];
+  if (Array.isArray(req.body) && incoming.length === 0) {
+    db.products = [];
+  } else if (incoming.length > 0) {
+    const touchedScopes = incoming.map((item: any) => ({ companyId: item.companyId, workspaceId: item.workspaceId, spaceId: item.spaceId }));
+    const untouched = (db.products || []).filter((product: any) => !touchedScopes.some(scope => sameScope(product, scope)));
+    db.products = [...untouched, ...mergeProductLists(incoming, (db.products || []).filter((product: any) => touchedScopes.some(scope => sameScope(product, scope))))];
+  }
   saveDb();
   const removedProductIds = oldProductIds.filter((id: string) => !(db.products || []).some((p: any) => p.id === id));
   await deleteFromSupabase('products', 'id', removedProductIds).catch((e) => console.error('[SalesFlow] Supabase products bulk delete failed:', e?.message));
@@ -598,7 +654,7 @@ app.post('/api/products/bulk', async (req: any, res: any) => {
 });
 
 app.post('/api/comandas', async (req: any, res: any) => {
-  const c = { ...req.body, updatedAt: req.body?.updatedAt || new Date().toISOString() };
+  const c = { ...withDefaultScope(req.body), updatedAt: req.body?.updatedAt || new Date().toISOString() };
   if (!c?.id) return res.status(400).json({ error: 'Missing id' });
   const i = db.comandas.findIndex((x: any) => x.id === c.id);
   if (i >= 0) db.comandas[i] = preferNewerComanda(c, db.comandas[i]); else db.comandas.unshift(c);
@@ -617,7 +673,14 @@ app.delete('/api/comandas/:id', async (req: any, res: any) => {
 
 app.post('/api/comandas/bulk', async (req: any, res: any) => {
   const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
-  if (Array.isArray(req.body)) db.comandas = mergeComandaLists(req.body, db.comandas || []);
+  const incoming = Array.isArray(req.body) ? req.body.map(withDefaultScope) : [];
+  if (Array.isArray(req.body) && incoming.length === 0) {
+    db.comandas = [];
+  } else if (incoming.length > 0) {
+    const touchedScopes = incoming.map((item: any) => ({ companyId: item.companyId, workspaceId: item.workspaceId, spaceId: item.spaceId }));
+    const untouched = (db.comandas || []).filter((comanda: any) => !touchedScopes.some(scope => sameScope(comanda, scope)));
+    db.comandas = [...untouched, ...mergeComandaLists(incoming, (db.comandas || []).filter((comanda: any) => touchedScopes.some(scope => sameScope(comanda, scope))))];
+  }
   saveDb();
   const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
   await deleteFromSupabase('comandas', 'id', removedComandaIds).catch((e) => console.error('[SalesFlow] Supabase comandas bulk delete failed:', e?.message));
@@ -627,7 +690,7 @@ app.post('/api/comandas/bulk', async (req: any, res: any) => {
 
 app.post('/api/notifications', async (req: any, res: any) => {
   if (req.body) {
-    db.notifications.unshift(req.body);
+    db.notifications.unshift(withDefaultScope(req.body));
     db.notifications = db.notifications.slice(0, 50);
   }
   saveDb();
@@ -670,7 +733,7 @@ app.get('/api/stock-movements', (req: any, res: any) => {
 });
 
 app.post('/api/stock-movements', async (req: any, res: any) => {
-  const movement = req.body;
+  const movement = withDefaultScope(req.body);
   if (!movement?.id) return res.status(400).json({ error: 'Missing id' });
   if (!db.stockMovements) db.stockMovements = [];
   db.stockMovements.unshift(movement);
@@ -696,7 +759,7 @@ app.post('/api/whatsapp/send-comanda-link', async (req: any, res: any) => {
   const comanda = req.body?.comanda;
   if (!comanda?.id) return res.status(400).json({ success: false, error: 'Comanda inválida.' });
 
-  const accessUrl = req.body?.accessUrl || `${getPublicOrigin(req)}?comanda=${encodeURIComponent(comanda.id)}`;
+  const accessUrl = req.body?.accessUrl || `${getPublicOrigin(req)}?company=${encodeURIComponent(comanda.companyId || DEFAULT_SCOPE.companyId)}&workspace=${encodeURIComponent(comanda.workspaceId || DEFAULT_SCOPE.workspaceId)}&space=${encodeURIComponent(comanda.spaceId || DEFAULT_SCOPE.spaceId)}&comanda=${encodeURIComponent(comanda.id)}`;
   const message = req.body?.message || getComandaAccessMessage(comanda, accessUrl);
   const phone = comanda.clientPhone || req.body?.phone || '';
   const number = normalizeWhatsAppNumber(phone);
@@ -708,6 +771,7 @@ app.post('/api/whatsapp/send-comanda-link', async (req: any, res: any) => {
   }
 
   const notification = {
+    ...withDefaultScope(comanda),
     id: `NOT-W-LINK-${Math.floor(1000 + Math.random() * 9000)}`,
     timestamp: new Date().toISOString(),
     recipient: comanda.clientName || 'Cliente',
@@ -739,7 +803,7 @@ app.post('/api/whatsapp/send-comanda-update', async (req: any, res: any) => {
   const { comanda, updateType, accessUrl: providedUrl } = req.body || {};
   if (!comanda?.id) return res.status(400).json({ success: false, error: 'Comanda inválida.' });
 
-  const accessUrl = providedUrl || `${getPublicOrigin(req)}?comanda=${encodeURIComponent(comanda.id)}`;
+  const accessUrl = providedUrl || `${getPublicOrigin(req)}?company=${encodeURIComponent(comanda.companyId || DEFAULT_SCOPE.companyId)}&workspace=${encodeURIComponent(comanda.workspaceId || DEFAULT_SCOPE.workspaceId)}&space=${encodeURIComponent(comanda.spaceId || DEFAULT_SCOPE.spaceId)}&comanda=${encodeURIComponent(comanda.id)}`;
   const message = getComandaUpdateMessage(comanda, accessUrl, updateType || 'update');
   const phone = comanda.clientPhone || '';
   const number = normalizeWhatsAppNumber(phone);
@@ -751,6 +815,7 @@ app.post('/api/whatsapp/send-comanda-update', async (req: any, res: any) => {
   }
 
   const notification = {
+    ...withDefaultScope(comanda),
     id: `NOT-W-UPD-${Math.floor(1000 + Math.random() * 9000)}`,
     timestamp: new Date().toISOString(),
     recipient: comanda.clientName || 'Cliente',

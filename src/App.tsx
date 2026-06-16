@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, CashierCashMovement, UserSession, SystemUser, StockMovement, AuditLogEntry, AuditEntityType, Receivable, USER_ROLE_LABELS, UserRole } from './types';
+import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, CashierCashMovement, UserSession, SystemUser, StockMovement, AuditLogEntry, AuditEntityType, Receivable, USER_ROLE_LABELS, UserRole, Company, Workspace, Space, DEFAULT_COMPANY, DEFAULT_WORKSPACE, DEFAULT_SPACE, DEFAULT_SCOPE, ScopeFields } from './types';
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS, MONTHS } from './initialData';
 import { 
   Plus, 
@@ -68,10 +68,25 @@ const ROLE_TAB_ACCESS: Record<UserRole, AdminSubTab[]> = {
 };
 
 const getUserRoleLabel = (role?: UserRole) => role ? (USER_ROLE_LABELS[role] || role) : '';
+const withDefaultScope = <T extends ScopeFields>(item: T): T => ({ ...DEFAULT_SCOPE, ...item });
+const isInScope = (item: ScopeFields, scope: Required<ScopeFields>) => (
+  (item.companyId || DEFAULT_SCOPE.companyId) === scope.companyId &&
+  (item.workspaceId || DEFAULT_SCOPE.workspaceId) === scope.workspaceId &&
+  (item.spaceId || DEFAULT_SCOPE.spaceId) === scope.spaceId
+);
 
 export default function App() {
   const initialComandaParam = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('comanda')
+    : null;
+  const initialCompanyParam = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('company')
+    : null;
+  const initialWorkspaceParam = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('workspace')
+    : null;
+  const initialSpaceParam = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('space')
     : null;
 
   // Brand Logo selection state
@@ -124,6 +139,16 @@ export default function App() {
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [categories, setCategories] = useState<string[]>(['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios']);
   const [unidades, setUnidades] = useState<string[]>(['Sede Principal', 'Filial Norte', 'Filial Sul']);
+  const [companies, setCompanies] = useState<Company[]>([DEFAULT_COMPANY]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([DEFAULT_WORKSPACE]);
+  const [spaces, setSpaces] = useState<Space[]>([DEFAULT_SPACE]);
+  const [activeCompanyId, setActiveCompanyId] = useState(() => initialCompanyParam || localStorage.getItem('salesflow_active_company_id') || DEFAULT_SCOPE.companyId);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => initialWorkspaceParam || localStorage.getItem('salesflow_active_workspace_id') || DEFAULT_SCOPE.workspaceId);
+  const [activeSpaceId, setActiveSpaceId] = useState(() => initialSpaceParam || localStorage.getItem('salesflow_active_space_id') || DEFAULT_SCOPE.spaceId);
+  const activeScope = { companyId: activeCompanyId, workspaceId: activeWorkspaceId, spaceId: activeSpaceId };
+  const activeCompany = companies.find(company => company.id === activeCompanyId) || DEFAULT_COMPANY;
+  const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId) || DEFAULT_WORKSPACE;
+  const activeSpace = spaces.find(space => space.id === activeSpaceId) || DEFAULT_SPACE;
   
   // Operating Unit cashier state
   const [operatingUnit, setOperatingUnit] = useState<string>(() => {
@@ -164,7 +189,14 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((user: SystemUser) => ({
+            ...user,
+            companyId: user.companyId || DEFAULT_SCOPE.companyId,
+            workspaceIds: user.workspaceIds?.length ? user.workspaceIds : [DEFAULT_SCOPE.workspaceId],
+            spaceIds: user.spaceIds?.length ? user.spaceIds : [DEFAULT_SCOPE.spaceId]
+          }));
+        }
       } catch (e) {
         // Fallback
       }
@@ -178,6 +210,9 @@ export default function App() {
         role: 'admin',
         status: 'active',
         password: '123',
+        companyId: DEFAULT_SCOPE.companyId,
+        workspaceIds: [DEFAULT_SCOPE.workspaceId],
+        spaceIds: [DEFAULT_SCOPE.spaceId],
         createdAt: new Date().toISOString()
       },
       {
@@ -188,6 +223,9 @@ export default function App() {
         role: 'cashier',
         status: 'active',
         password: '123',
+        companyId: DEFAULT_SCOPE.companyId,
+        workspaceIds: [DEFAULT_SCOPE.workspaceId],
+        spaceIds: [DEFAULT_SCOPE.spaceId],
         createdAt: new Date().toISOString()
       }
     ];
@@ -432,6 +470,7 @@ export default function App() {
         : getReceivableStatus(amount, paidAmount);
 
       const next: Receivable = {
+        ...withDefaultScope(comanda),
         id: existing?.id || `REC-${comanda.id}`,
         comandaId: comanda.id,
         clientName: comanda.clientName,
@@ -485,7 +524,7 @@ export default function App() {
     }
     const canApplyRemoteState = !comandaSyncGuardRef.current && Date.now() >= comandaCooldownUntilRef.current;
     if (canApplyRemoteState) {
-      const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : null;
+      const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas).map(withDefaultScope) : null;
       if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
         const mergedComandas = mergeComandasFromRemote(remoteComandas as Comanda[], comandasRef.current);
         if (JSON.stringify(mergedComandas) !== JSON.stringify(comandasRef.current)) {
@@ -495,7 +534,7 @@ export default function App() {
       }
 
       if (Array.isArray(data.products)) {
-        const mergedProducts = mergeProductsFromRemote(data.products, productsRef.current);
+        const mergedProducts = mergeProductsFromRemote(data.products.map(withDefaultScope), productsRef.current);
         if (JSON.stringify(mergedProducts) !== JSON.stringify(productsRef.current)) {
           setProducts(mergedProducts);
           localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
@@ -503,7 +542,7 @@ export default function App() {
       }
 
       if (Array.isArray(data.stockMovements) && JSON.stringify(data.stockMovements) !== JSON.stringify(stockMovementsRef.current)) {
-        setStockMovements(data.stockMovements);
+        setStockMovements(data.stockMovements.map(withDefaultScope));
       }
 
       if (Array.isArray(data.categories) && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
@@ -528,7 +567,7 @@ export default function App() {
       }
 
       if (Array.isArray(data.receivables) && JSON.stringify(data.receivables) !== JSON.stringify(receivablesRef.current)) {
-        const mergedReceivables = syncReceivablesFromComandas(comandasRef.current, mergeReceivables(data.receivables, receivablesRef.current));
+        const mergedReceivables = syncReceivablesFromComandas(comandasRef.current, mergeReceivables(data.receivables.map(withDefaultScope), receivablesRef.current));
         setReceivables(mergedReceivables);
         localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
       }
@@ -571,13 +610,35 @@ export default function App() {
     const cachedReceivables = localStorage.getItem('salesflow_receivables');
     const cachedCategories = localStorage.getItem('salesflow_categories');
     const cachedUnidades = localStorage.getItem('salesflow_unidades');
+    const cachedCompanies = localStorage.getItem('salesflow_companies');
+    const cachedWorkspaces = localStorage.getItem('salesflow_workspaces');
+    const cachedSpaces = localStorage.getItem('salesflow_spaces');
 
-    let loadedProducts = INITIAL_PRODUCTS;
+    if (cachedCompanies) {
+      try {
+        const parsed = JSON.parse(cachedCompanies);
+        if (Array.isArray(parsed) && parsed.length > 0) setCompanies(parsed);
+      } catch (e) {}
+    }
+    if (cachedWorkspaces) {
+      try {
+        const parsed = JSON.parse(cachedWorkspaces);
+        if (Array.isArray(parsed) && parsed.length > 0) setWorkspaces(parsed);
+      } catch (e) {}
+    }
+    if (cachedSpaces) {
+      try {
+        const parsed = JSON.parse(cachedSpaces);
+        if (Array.isArray(parsed) && parsed.length > 0) setSpaces(parsed);
+      } catch (e) {}
+    }
+
+    let loadedProducts = INITIAL_PRODUCTS.map(withDefaultScope);
     if (cachedProducts) {
       try {
         const parsed = JSON.parse(cachedProducts);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedProducts = parsed;
+          loadedProducts = parsed.map(withDefaultScope);
         }
       } catch (e) {
         console.warn("Error parsing cached products, resorting to fallback:", e);
@@ -585,12 +646,12 @@ export default function App() {
     }
     setProducts(loadedProducts);
 
-    let loadedComandas = INITIAL_COMANDAS;
+    let loadedComandas = INITIAL_COMANDAS.map(withDefaultScope);
     if (cachedComandas) {
       try {
         const parsed = JSON.parse(cachedComandas);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedComandas = sanitizeComandas(parsed);
+          loadedComandas = sanitizeComandas(parsed).map(withDefaultScope);
           localStorage.setItem('salesflow_tickets_v2', JSON.stringify(loadedComandas));
         }
       } catch (e) {
@@ -628,14 +689,14 @@ export default function App() {
     }
     if (cachedActiveShift) {
       try {
-        setActiveShift(JSON.parse(cachedActiveShift));
+        setActiveShift(withDefaultScope(JSON.parse(cachedActiveShift)));
       } catch (e) {}
     }
     if (cachedShiftHistory) {
       try {
         const parsed = JSON.parse(cachedShiftHistory);
         if (Array.isArray(parsed)) {
-          setShiftHistory(parsed);
+          setShiftHistory(parsed.map(withDefaultScope));
         }
       } catch (e) {}
     }
@@ -660,8 +721,8 @@ export default function App() {
       try {
         const parsed = JSON.parse(cachedReceivables);
         if (Array.isArray(parsed)) {
-          loadedReceivables = parsed;
-          setReceivables(parsed);
+          loadedReceivables = parsed.map(withDefaultScope);
+          setReceivables(loadedReceivables);
         }
       } catch (e) {}
     }
@@ -699,7 +760,7 @@ export default function App() {
         if (localDataVersion && hasLocalData) {
           // Keep local products & comandas, don't overwrite with server (which may be from different instance)
           // Server was explicitly cleared — trust server for comandas
-          const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
+              const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas).map(withDefaultScope) : [];
           if (serverComandas.length === 0 && loadedComandas.length > 0) {
             setComandas([]);
             localStorage.setItem('salesflow_tickets_v2', '[]');
@@ -725,7 +786,7 @@ export default function App() {
               localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
               loadedComandas = serverComandas;
               if (Array.isArray(data.products) && data.products.length > 0) {
-                const mergedProducts = mergeProductsFromRemote(data.products, loadedProducts);
+                const mergedProducts = mergeProductsFromRemote(data.products.map(withDefaultScope), loadedProducts);
                 setProducts(mergedProducts);
                 localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
                 loadedProducts = mergedProducts;
@@ -735,7 +796,7 @@ export default function App() {
                 localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
               }
               if (Array.isArray(data.stockMovements)) {
-                setStockMovements(data.stockMovements);
+                setStockMovements(data.stockMovements.map(withDefaultScope));
               }
               if (Array.isArray(data.auditLogs)) {
                 const mergedAuditLogs = mergeAuditLogs(data.auditLogs, auditLogsRef.current);
@@ -743,7 +804,7 @@ export default function App() {
                 localStorage.setItem('salesflow_audit_logs', JSON.stringify(mergedAuditLogs));
               }
               if (Array.isArray(data.receivables)) {
-                const mergedReceivables = syncReceivablesFromComandas(serverComandas, mergeReceivables(data.receivables, loadedReceivables));
+                const mergedReceivables = syncReceivablesFromComandas(serverComandas, mergeReceivables(data.receivables.map(withDefaultScope), loadedReceivables));
                 setReceivables(mergedReceivables);
                 localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
                 loadedReceivables = mergedReceivables;
@@ -756,7 +817,7 @@ export default function App() {
         } else {
           // No local version — trust server for products
           if (data.products && Array.isArray(data.products) && data.products.length > 0) {
-            const mergedProducts = mergeProductsFromRemote(data.products, loadedProducts);
+            const mergedProducts = mergeProductsFromRemote(data.products.map(withDefaultScope), loadedProducts);
             setProducts(mergedProducts);
             localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
             loadedProducts = mergedProducts;
@@ -765,7 +826,7 @@ export default function App() {
           }
 
           // Server comandas
-          const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas) : [];
+            const serverComandas = data.comandas && Array.isArray(data.comandas) ? sanitizeComandas(data.comandas).map(withDefaultScope) : [];
           if (serverComandas.length > 0) {
             setComandas(serverComandas);
             localStorage.setItem('salesflow_tickets_v2', JSON.stringify(serverComandas));
@@ -803,7 +864,7 @@ export default function App() {
             const cleaned = data.stockMovements.filter(
               (m: StockMovement) => m.id !== 'MOV-1781139463153-464' && m.id !== 'MOV-1781139402298-296'
             );
-            setStockMovements(cleaned);
+            setStockMovements(cleaned.map(withDefaultScope));
           }
 
           if (data.auditLogs && Array.isArray(data.auditLogs)) {
@@ -813,7 +874,7 @@ export default function App() {
           }
 
           if (data.receivables && Array.isArray(data.receivables)) {
-            const mergedReceivables = syncReceivablesFromComandas(loadedComandas, mergeReceivables(data.receivables, loadedReceivables));
+              const mergedReceivables = syncReceivablesFromComandas(loadedComandas, mergeReceivables(data.receivables.map(withDefaultScope), loadedReceivables));
             setReceivables(mergedReceivables);
             localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
             loadedReceivables = mergedReceivables;
@@ -1022,12 +1083,17 @@ export default function App() {
     let currentProds = products;
     if (updatedProducts) {
       const now = new Date().toISOString();
-      currentProds = updatedProducts.map(product => {
+      const scopedProductIds = new Set(updatedProducts.map(product => product.id));
+      const versionedScopedProducts = updatedProducts.map(product => {
         const previous = productsRef.current.find(p => p.id === product.id);
         return previous && JSON.stringify({ ...previous, updatedAt: undefined }) === JSON.stringify({ ...product, updatedAt: undefined })
           ? product
-          : { ...product, updatedAt: now };
+          : { ...activeScope, ...product, updatedAt: now };
       });
+      currentProds = [
+        ...productsRef.current.filter(product => !isInScope(product, activeScope) || !scopedProductIds.has(product.id)),
+        ...versionedScopedProducts
+      ];
       setProducts(currentProds);
       localStorage.setItem('salesflow_products_v2', JSON.stringify(currentProds));
     }
@@ -1106,6 +1172,7 @@ export default function App() {
   const recordAuditLog = (entry: Omit<AuditLogEntry, 'id' | 'timestamp' | 'actorId' | 'actorName' | 'actorLogin' | 'actorRole'>) => {
     const actorName = session?.username || 'Sistema';
     const auditEntry: AuditLogEntry = {
+      ...activeScope,
       ...entry,
       id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: new Date().toISOString(),
@@ -1170,6 +1237,25 @@ export default function App() {
     localStorage.setItem('salesflow_users_v2', JSON.stringify(users));
   }, [users]);
 
+  useEffect(() => {
+    localStorage.setItem('salesflow_companies', JSON.stringify(companies));
+  }, [companies]);
+
+  useEffect(() => {
+    localStorage.setItem('salesflow_workspaces', JSON.stringify(workspaces));
+  }, [workspaces]);
+
+  useEffect(() => {
+    localStorage.setItem('salesflow_spaces', JSON.stringify(spaces));
+  }, [spaces]);
+
+  useEffect(() => {
+    localStorage.setItem('salesflow_active_company_id', activeCompanyId);
+    localStorage.setItem('salesflow_active_workspace_id', activeWorkspaceId);
+    localStorage.setItem('salesflow_active_space_id', activeSpaceId);
+    setSelectedComandaId(null);
+  }, [activeCompanyId, activeWorkspaceId, activeSpaceId]);
+
   // Synchronize operating unit with the units catalog list
   useEffect(() => {
     if (unidades.length > 0 && !unidades.includes(operatingUnit)) {
@@ -1231,7 +1317,7 @@ export default function App() {
       try {
         if (e.key === 'salesflow_products_v2' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setProducts(parsed);
+          if (Array.isArray(parsed)) setProducts(parsed.map(withDefaultScope));
         }
         if (e.key === 'salesflow_users_v2' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
@@ -1240,7 +1326,7 @@ export default function App() {
         if (e.key === 'salesflow_tickets_v2' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
-            setComandas(parsed);
+            setComandas(parsed.map(withDefaultScope));
             const ver = localStorage.getItem('salesflow_comanda_version');
             if (ver) {
               const pv = parseInt(ver);
@@ -1258,11 +1344,11 @@ export default function App() {
           setSession(e.newValue ? JSON.parse(e.newValue) : null);
         }
         if (e.key === 'salesflow_active_shift') {
-          setActiveShift(e.newValue ? JSON.parse(e.newValue) : null);
+          setActiveShift(e.newValue ? withDefaultScope(JSON.parse(e.newValue)) : null);
         }
         if (e.key === 'salesflow_shift_history' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed)) setShiftHistory(parsed);
+          if (Array.isArray(parsed)) setShiftHistory(parsed.map(withDefaultScope));
         }
         if (e.key === 'salesflow_notifications' && e.newValue) {
           const parsed = JSON.parse(e.newValue);
@@ -1277,13 +1363,48 @@ export default function App() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  const scopedProducts = products.filter(product => isInScope(product, activeScope));
+  const scopedComandas = comandas.filter(comanda => isInScope(comanda, activeScope));
+  const scopedStockMovements = stockMovements.filter(movement => isInScope(movement, activeScope));
+  const scopedReceivables = receivables.filter(receivable => isInScope(receivable, activeScope));
+  const scopedAuditLogs = auditLogs.filter(log => isInScope(log, activeScope));
+  const scopedShiftHistory = shiftHistory.filter(shift => isInScope(shift, activeScope));
+  const scopedActiveShift = activeShift && isInScope(activeShift, activeScope) ? activeShift : null;
+  const setScopedProducts: React.Dispatch<React.SetStateAction<Product[]>> = (value) => {
+    setProducts(prev => {
+      const previousScoped = prev.filter(product => isInScope(product, activeScope));
+      const nextScoped = typeof value === 'function'
+        ? (value as (current: Product[]) => Product[])(previousScoped)
+        : value;
+      const scopedIds = new Set(nextScoped.map(product => product.id));
+      return [
+        ...prev.filter(product => !isInScope(product, activeScope) || !scopedIds.has(product.id)),
+        ...nextScoped.map(product => ({ ...activeScope, ...product }))
+      ];
+    });
+  };
+  const setScopedStockMovements: React.Dispatch<React.SetStateAction<StockMovement[]>> = (value) => {
+    setStockMovements(prev => {
+      const previousScoped = prev.filter(movement => isInScope(movement, activeScope));
+      const nextScoped = typeof value === 'function'
+        ? (value as (current: StockMovement[]) => StockMovement[])(previousScoped)
+        : value;
+      const scopedIds = new Set(nextScoped.map(movement => movement.id));
+      return [
+        ...prev.filter(movement => !isInScope(movement, activeScope) || !scopedIds.has(movement.id)),
+        ...nextScoped.map(movement => ({ ...activeScope, ...movement }))
+      ];
+    });
+  };
+
   // Active comanda reference
-  const selectedComanda = comandas.find(c => c.id === selectedComandaId) || null;
+  const selectedComanda = scopedComandas.find(c => c.id === selectedComandaId) || null;
 
   // --- BUSINESS LOGIC COMMANDS ---
 
   // 1. Manage Stock (CRUD)
   const handleSaveProduct = (updatedProduct: Product) => {
+    updatedProduct = { ...activeScope, ...updatedProduct };
     const currentProducts = productsRef.current;
     const exists = currentProducts.some(p => p.id === updatedProduct.id);
     const old = currentProducts.find(p => p.id === updatedProduct.id);
@@ -1570,11 +1691,12 @@ export default function App() {
     const messageEmail = `Olá ${clientName},\n\nO status do seu pedido para o treinamento "${course}" no sistema SalesFlow mudou de status para: ${newStatus.toUpperCase()}.\n\nE-mail de envio: ${email}\n\nAgradecemos a sua preferência!\n\nSalesFlow Automated System`;
     const messageSms = `SalesFlow: Olá ${clientName}, o status do seu pedido do curso "${course}" foi alterado para ${newStatus.toUpperCase()}! SMS enviado para ${phone}.`;
     
-    const comandaLiveUrl = `${window.location.origin}${window.location.pathname}?comanda=${comanda.id}`;
+    const comandaLiveUrl = getComandaAccessUrl(comanda);
     const statusEmoji = newStatus === 'Pago' ? '✅ PAGO E ENCERRADO' : `⏳ ${newStatus.toUpperCase()}`;
     const messageWhatsApp = `*SalesFlow* 🛎️\nOlá, *${clientName}*!\nAtualização de comanda (*${comanda.id}*):\n• Status: *${statusEmoji}*\n• Unidade: *${comanda.unit || 'Sede Principal'}*\n\nAcompanhe seu consumo e assine digitalmente: \n${comandaLiveUrl}\n\n_Mensagem automática enviada via sistema WhatsApp SalesFlow do número: ${systemWhatsNumber}_`;
 
     const newNotifEmail = {
+      ...withDefaultScope(comanda),
       id: `NOT-E-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString(),
       recipient: clientName,
@@ -1586,6 +1708,7 @@ export default function App() {
     };
 
     const newNotifSms = {
+      ...withDefaultScope(comanda),
       id: `NOT-S-${Math.floor(1000 + Math.random() * 9000)}`,
       timestamp: new Date().toISOString(),
       recipient: clientName,
@@ -1665,7 +1788,13 @@ export default function App() {
   };
 
   const getComandaAccessUrl = (comanda: Comanda) => {
-    return `${window.location.origin}${window.location.pathname}?comanda=${encodeURIComponent(comanda.id)}`;
+    const params = new URLSearchParams({
+      company: comanda.companyId || DEFAULT_SCOPE.companyId,
+      workspace: comanda.workspaceId || DEFAULT_SCOPE.workspaceId,
+      space: comanda.spaceId || DEFAULT_SCOPE.spaceId,
+      comanda: comanda.id
+    });
+    return `${window.location.origin}${window.location.pathname}?${params.toString()}`;
   };
 
   const getComandaAccessMessage = (comanda: Comanda) => {
@@ -1740,8 +1869,14 @@ export default function App() {
         loginName: foundUser.username,
         role: foundUser.role,
         email: foundUser.email,
-        avatar: foundUser.avatar
+        avatar: foundUser.avatar,
+        companyId: foundUser.companyId || DEFAULT_SCOPE.companyId,
+        workspaceIds: foundUser.workspaceIds?.length ? foundUser.workspaceIds : [DEFAULT_SCOPE.workspaceId],
+        spaceIds: foundUser.spaceIds?.length ? foundUser.spaceIds : [DEFAULT_SCOPE.spaceId]
       };
+      setActiveCompanyId(newSession.companyId || DEFAULT_SCOPE.companyId);
+      setActiveWorkspaceId(newSession.workspaceIds?.[0] || DEFAULT_SCOPE.workspaceId);
+      setActiveSpaceId(newSession.spaceIds?.[0] || DEFAULT_SCOPE.spaceId);
       setSession(newSession);
       localStorage.setItem('salesflow_session', JSON.stringify(newSession));
       setLoginUsername('');
@@ -1805,8 +1940,14 @@ export default function App() {
       loginName: updatedUser.username,
       role: updatedUser.role,
       email: updatedUser.email,
-      avatar: updatedUser.avatar
+      avatar: updatedUser.avatar,
+      companyId: updatedUser.companyId || DEFAULT_SCOPE.companyId,
+      workspaceIds: updatedUser.workspaceIds?.length ? updatedUser.workspaceIds : [DEFAULT_SCOPE.workspaceId],
+      spaceIds: updatedUser.spaceIds?.length ? updatedUser.spaceIds : [DEFAULT_SCOPE.spaceId]
     };
+    setActiveCompanyId(newSession.companyId || DEFAULT_SCOPE.companyId);
+    setActiveWorkspaceId(newSession.workspaceIds?.[0] || DEFAULT_SCOPE.workspaceId);
+    setActiveSpaceId(newSession.spaceIds?.[0] || DEFAULT_SCOPE.spaceId);
     
     setSession(newSession);
     localStorage.setItem('salesflow_session', JSON.stringify(newSession));
@@ -1917,6 +2058,12 @@ export default function App() {
   };
 
   const handleSaveUser = (user: SystemUser) => {
+    user = {
+      ...user,
+      companyId: user.companyId || activeScope.companyId,
+      workspaceIds: user.workspaceIds?.length ? user.workspaceIds : [activeScope.workspaceId],
+      spaceIds: user.spaceIds?.length ? user.spaceIds : [activeScope.spaceId]
+    };
     const existsBefore = users.some(u => u.id === user.id);
     setUsers(curr => {
       const exists = curr.some(u => u.id === user.id);
@@ -2129,6 +2276,7 @@ export default function App() {
   const handleOpenShift = (e: React.FormEvent) => {
     e.preventDefault();
     const newShift: CashierShift = {
+      ...activeScope,
       id: `SHF-${Math.floor(1000 + Math.random() * 9000)}`,
       openedAt: new Date().toISOString(),
       openedBy: session?.username || 'Usuário',
@@ -2196,6 +2344,7 @@ export default function App() {
 
   const getShiftRevenue = (shift: CashierShift) => {
     return comandas
+      .filter(c => isInScope(c, shift as Required<ScopeFields>))
       .filter(c => c.status === 'Pago' && c.closedAt && c.closedAt >= shift.openedAt && (!shift.closedAt || c.closedAt <= shift.closedAt))
       .reduce((val, c) => {
         const comandaValue = c.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
@@ -2250,14 +2399,15 @@ export default function App() {
   };
 
   const recordStockMovement = (movement: StockMovement) => {
-    setStockMovements(prev => [movement, ...prev].slice(0, 1000));
+    const scopedMovement = { ...activeScope, ...movement };
+    setStockMovements(prev => [scopedMovement, ...prev].slice(0, 1000));
     const version = Date.now();
     localStorage.setItem('salesflow_comanda_version', version.toString());
     comandaVersionRef.current = version;
     fetch('/api/stock-movements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(movement)
+      body: JSON.stringify(scopedMovement)
     }).catch(() => {});
   };
 
@@ -2265,6 +2415,7 @@ export default function App() {
     const user = session?.loginName || session?.username || 'Sistema';
     const typeLabel = type === 'entrada' ? 'ENTRADA' : type === 'saida' ? 'SAÍDA' : 'AJUSTE';
     const notif = {
+      ...activeScope,
       id: `NOT-STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: new Date().toISOString(),
       recipient: user,
@@ -2395,6 +2546,7 @@ export default function App() {
   const handleRegisterNewComanda = (meta: { name: string; type: ClientType; course: string; month: string; email?: string; phone?: string; unit?: string }) => {
     const generatedId = `COM-${Math.floor(1000 + Math.random() * 9000)}`;
     const newComanda: Comanda = {
+      ...activeScope,
       id: generatedId,
       clientName: meta.name || 'Cliente Balcão',
       clientType: meta.type || 'Aluno',
@@ -2597,7 +2749,7 @@ export default function App() {
     pdv: 'PDV',
     sistema: 'Sistema'
   };
-  const filteredAuditLogs = auditLogs.filter(log => {
+  const filteredAuditLogs = scopedAuditLogs.filter(log => {
     if (auditEntityFilter !== 'all' && log.entityType !== auditEntityFilter) return false;
     if (auditDateFilter && !String(log.timestamp || '').startsWith(auditDateFilter)) return false;
     const query = auditSearch.trim().toLowerCase();
@@ -2650,8 +2802,8 @@ export default function App() {
         {/* Outer view wrapping just the client card but seamlessly styled */}
         <div className="w-full max-w-[390px] min-h-screen md:min-h-[640px] flex items-center justify-center">
           <ClientMobileView
-            comandas={comandas}
-            products={products}
+            comandas={scopedComandas}
+            products={scopedProducts}
             activeComandaId={clientActiveComandaId}
             isSyncing={!isInitialized}
             onAddProductFromClient={handleAddProductToComanda}
@@ -2859,16 +3011,70 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-900/60 border border-slate-700/40 p-2.5 rounded-2xl shadow-inner w-full xl:w-auto">
+                    <div className="text-left min-w-[130px]">
+                      <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Empresa</span>
+                      <select
+                        value={activeCompanyId}
+                        onChange={(e) => {
+                          const companyId = e.target.value;
+                          const nextWorkspace = workspaces.find(workspace => workspace.companyId === companyId) || DEFAULT_WORKSPACE;
+                          const nextSpace = spaces.find(space => space.companyId === companyId && space.workspaceId === nextWorkspace.id) || DEFAULT_SPACE;
+                          setActiveCompanyId(companyId);
+                          setActiveWorkspaceId(nextWorkspace.id);
+                          setActiveSpaceId(nextSpace.id);
+                        }}
+                        className="w-full bg-transparent border-none text-xs font-black text-frz-primary focus:outline-none cursor-pointer font-mono"
+                        style={{ colorScheme: 'dark' }}
+                      >
+                        {companies.filter(company => company.status === 'active').map(company => (
+                          <option key={company.id} value={company.id} className="bg-slate-900 text-white font-sans font-bold">{company.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-left min-w-[130px]">
+                      <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Workspace</span>
+                      <select
+                        value={activeWorkspaceId}
+                        onChange={(e) => {
+                          const workspaceId = e.target.value;
+                          const nextSpace = spaces.find(space => space.companyId === activeCompanyId && space.workspaceId === workspaceId) || DEFAULT_SPACE;
+                          setActiveWorkspaceId(workspaceId);
+                          setActiveSpaceId(nextSpace.id);
+                        }}
+                        className="w-full bg-transparent border-none text-xs font-black text-frz-primary focus:outline-none cursor-pointer font-mono"
+                        style={{ colorScheme: 'dark' }}
+                      >
+                        {workspaces.filter(workspace => workspace.companyId === activeCompanyId && workspace.status === 'active').map(workspace => (
+                          <option key={workspace.id} value={workspace.id} className="bg-slate-900 text-white font-sans font-bold">{workspace.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-left min-w-[130px]">
+                      <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Frente de Venda</span>
+                      <select
+                        value={activeSpaceId}
+                        onChange={(e) => setActiveSpaceId(e.target.value)}
+                        className="w-full bg-transparent border-none text-xs font-black text-frz-primary focus:outline-none cursor-pointer font-mono"
+                        style={{ colorScheme: 'dark' }}
+                      >
+                        {spaces.filter(space => space.companyId === activeCompanyId && space.workspaceId === activeWorkspaceId && space.status === 'active').map(space => (
+                          <option key={space.id} value={space.id} className="bg-slate-900 text-white font-sans font-bold">{space.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="flex gap-2 w-full sm:w-auto">
-                    {activeShift ? (
+                    {scopedActiveShift ? (
                       <div className="flex items-center gap-2 w-full justify-between sm:justify-end">
                         <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                          Caixa Aberto ({activeShift.id})
+                          Caixa Aberto ({scopedActiveShift.id})
                         </span>
                         <button
                           onClick={() => {
-                            setCloseActualCash(getExpectedShiftBalance(activeShift));
+                            setCloseActualCash(getExpectedShiftBalance(scopedActiveShift));
                             setIsShiftCloseModalOpen(true);
                           }}
                           className="bg-frz-primary hover:bg-frz-primary-hover text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 cursor-pointer shadow-sm"
@@ -2965,7 +3171,7 @@ export default function App() {
                           {!sidebarCollapsed && (
                             <span className="text-left min-w-0">
                               <span className="block truncate">Comandas</span>
-                              <span className="block text-[9px] text-slate-400 font-semibold">{comandas.filter(c => c.status === 'Pendente').length} ativas</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">{scopedComandas.filter(c => c.status === 'Pendente').length} ativas</span>
                             </span>
                           )}
                         </button>
@@ -3042,7 +3248,7 @@ export default function App() {
                           {!sidebarCollapsed && (
                             <span className="text-left min-w-0">
                               <span className="block truncate">Estoque e Produtos</span>
-                              <span className="block text-[9px] text-slate-400 font-semibold">{products.length} produtos</span>
+                              <span className="block text-[9px] text-slate-400 font-semibold">{scopedProducts.length} produtos</span>
                             </span>
                           )}
                         </button>
@@ -3120,7 +3326,7 @@ export default function App() {
                             {!sidebarCollapsed && (
                               <span className="text-left min-w-0">
                                 <span className="block truncate">Auditoria</span>
-                                <span className="block text-[9px] text-slate-400 font-semibold">{auditLogs.length} registros</span>
+                                <span className="block text-[9px] text-slate-400 font-semibold">{scopedAuditLogs.length} registros</span>
                               </span>
                             )}
                           </button>
@@ -3175,7 +3381,7 @@ export default function App() {
                   <div className="flex-1 min-w-0">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
-                {!activeShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && (
+                {!scopedActiveShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && (
                   <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-2xl text-xs flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
                     <div className="flex gap-2 items-start">
                       <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
@@ -3206,11 +3412,11 @@ export default function App() {
                   </div>
                 ) : activeAdminSubTab === 'pdv' ? (
                   <DirectPOSView
-                    products={products}
+                    products={scopedProducts}
                     operatingUnit={operatingUnit}
-                    setStockMovements={setStockMovements}
-                    setProducts={setProducts}
-                    stockMovements={stockMovements}
+                    setStockMovements={setScopedStockMovements}
+                    setProducts={setScopedProducts}
+                    stockMovements={scopedStockMovements}
                     onStockNotification={recordStockNotification}
                     onAudit={(event) => {
                       recordAuditLog({
@@ -3236,7 +3442,7 @@ export default function App() {
                   />
                 ) : activeAdminSubTab === 'estoque' ? (
                   <StockManagement
-                    products={products}
+                    products={scopedProducts}
                     onSaveProduct={handleSaveProduct}
                     onDeleteProduct={handleDeleteProduct}
                     categories={categories}
@@ -3244,14 +3450,14 @@ export default function App() {
                   />
                 ) : activeAdminSubTab === 'fluxo' ? (
                   <FluxoDashboard
-                    products={products}
-                    comandas={comandas}
-                    receivables={receivables}
+                    products={scopedProducts}
+                    comandas={scopedComandas}
+                    receivables={scopedReceivables}
                     onUpdateReceivable={handleUpdateReceivable}
-                    stockMovements={stockMovements}
-                    setStockMovements={setStockMovements}
-                    activeShift={activeShift}
-                    shiftHistory={shiftHistory}
+                    stockMovements={scopedStockMovements}
+                    setStockMovements={setScopedStockMovements}
+                    activeShift={scopedActiveShift}
+                    shiftHistory={scopedShiftHistory}
                   />
                 ) : activeAdminSubTab === 'acessos' ? (
                   <AccessManagement
@@ -3391,12 +3597,12 @@ export default function App() {
                       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
                         <div>
                           <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Status do Turno Atual</span>
-                          {activeShift ? (
+                          {scopedActiveShift ? (
                             <div className="mt-4 space-y-4">
                               <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
                                 <div>
                                   <span className="text-[9px] text-slate-400 uppercase">Operador Responsável</span>
-                                  <div className="text-xs font-black text-slate-700 mt-0.5">{activeShift.openedBy}</div>
+                                  <div className="text-xs font-black text-slate-700 mt-0.5">{scopedActiveShift.openedBy}</div>
                                 </div>
                                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full">ABERTO</span>
                               </div>
@@ -3404,28 +3610,28 @@ export default function App() {
                               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Abertura</span>
-                                  <span className="text-xs font-black text-slate-700">R$ {Number(activeShift.initialBalance || 0).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-slate-700">R$ {Number(scopedActiveShift.initialBalance || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Vendas Caixa</span>
-                                  <span className="text-xs font-black text-emerald-600 font-mono">+R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-emerald-600 font-mono">+R$ {Number(getShiftRevenue(scopedActiveShift) || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Ajustes</span>
-                                  <span className={`text-xs font-black font-mono ${getShiftCashAdjustment(activeShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
-                                    {getShiftCashAdjustment(activeShift) >= 0 ? '+' : ''}R$ {getShiftCashAdjustment(activeShift).toFixed(2)}
+                                  <span className={`text-xs font-black font-mono ${getShiftCashAdjustment(scopedActiveShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                    {getShiftCashAdjustment(scopedActiveShift) >= 0 ? '+' : ''}R$ {getShiftCashAdjustment(scopedActiveShift).toFixed(2)}
                                   </span>
                                 </div>
                                 <div className="bg-frz-primary/10 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Estimado</span>
-                                  <span className="text-xs font-black text-frz-primary font-mono">R$ {getExpectedShiftBalance(activeShift).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-frz-primary font-mono">R$ {getExpectedShiftBalance(scopedActiveShift).toFixed(2)}</span>
                                 </div>
                               </div>
 
                               <form onSubmit={handleRegisterCashMovement} className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Sangria / Suprimento</span>
-                                  <span className="text-[9px] font-bold text-slate-400">{activeShift.cashMovements?.length || 0} movimento(s)</span>
+                                  <span className="text-[9px] font-bold text-slate-400">{scopedActiveShift.cashMovements?.length || 0} movimento(s)</span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-[130px_110px_1fr_auto] gap-2">
                                   <select
@@ -3459,9 +3665,9 @@ export default function App() {
                                     Registrar
                                   </button>
                                 </div>
-                                {(activeShift.cashMovements || []).length > 0 && (
+                                {(scopedActiveShift.cashMovements || []).length > 0 && (
                                   <div className="space-y-1 max-h-20 overflow-y-auto pr-1">
-                                    {(activeShift.cashMovements || []).slice(0, 4).map(movement => (
+                                    {(scopedActiveShift.cashMovements || []).slice(0, 4).map(movement => (
                                       <div key={movement.id} className="flex items-center justify-between gap-2 text-[10px] bg-white border border-slate-100 rounded-lg px-2.5 py-1.5">
                                         <span className="font-bold text-slate-600 truncate">{movement.reason}</span>
                                         <span className={`font-black font-mono ${movement.type === 'suprimento' ? 'text-blue-600' : 'text-rose-600'}`}>
@@ -3473,11 +3679,11 @@ export default function App() {
                                 )}
                               </form>
 
-                              <p className="text-[10px] text-slate-400">Iniciado em: <strong className="text-slate-600 font-semibold">{new Date(activeShift.openedAt || Date.now()).toLocaleString('pt-BR')}</strong></p>
+                              <p className="text-[10px] text-slate-400">Iniciado em: <strong className="text-slate-600 font-semibold">{new Date(scopedActiveShift.openedAt || Date.now()).toLocaleString('pt-BR')}</strong></p>
 
                               <button
                                 onClick={() => {
-                                  setCloseActualCash(getExpectedShiftBalance(activeShift));
+                                  setCloseActualCash(getExpectedShiftBalance(scopedActiveShift));
                                   setIsShiftCloseModalOpen(true);
                                 }}
                                 className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
@@ -3510,14 +3716,14 @@ export default function App() {
                         <div>
                           <div className="flex justify-between items-center">
                             <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Histórico de Fechamento de Caixa</span>
-                            <span className="text-[9px] text-slate-400 font-bold block">Últimos {shiftHistory.length} turnos</span>
+                            <span className="text-[9px] text-slate-400 font-bold block">Últimos {scopedShiftHistory.length} turnos</span>
                           </div>
 
                           <div className="mt-4 space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                            {shiftHistory.length === 0 ? (
+                            {scopedShiftHistory.length === 0 ? (
                               <p className="text-[11px] text-slate-400 text-center py-8">Nenhum histórico de caixa fechado registrado.</p>
                             ) : (
-                              shiftHistory.map((shf) => {
+                              scopedShiftHistory.map((shf) => {
                                 const devRevenue = shf.finalBalance ? (shf.finalBalance - shf.initialBalance - getShiftCashAdjustment(shf)) : 0;
                                 const diff = shf.actualCashInHand !== undefined && shf.finalBalance !== undefined 
                                   ? shf.actualCashInHand - shf.finalBalance
@@ -3627,7 +3833,7 @@ export default function App() {
                     {selectedComanda ? (
                       <ComandaDetailView
                         comanda={selectedComanda}
-                        products={products}
+                        products={scopedProducts}
                         onAddProduct={handleAddProductToComanda}
                         onRemoveItem={handleRemoveItemFromComanda}
                         onUpdateItemQuantity={handleUpdateItemQuantity}
@@ -3643,7 +3849,7 @@ export default function App() {
                     ) : (
                       /* Standard Tickets listing Board with aggregations & filters */
                       <ComandaList
-                        comandas={comandas}
+                        comandas={scopedComandas}
                         selectedComanda={selectedComanda}
                         onSelect={(c) => setSelectedComandaId(c.id)}
                         onOpenCreateModal={() => setIsNewComandaModalOpen(true)}
@@ -3691,8 +3897,8 @@ export default function App() {
             )}
 
             <ClientMobileView
-              comandas={comandas}
-              products={products}
+              comandas={scopedComandas}
+              products={scopedProducts}
               activeComandaId={clientActiveComandaId}
               isSyncing={!isInitialized}
               onAddProductFromClient={handleAddProductToComanda}
@@ -3849,7 +4055,7 @@ export default function App() {
           onClose={() => setIsManageUnitsModalOpen(false)}
           unidades={unidades}
           onSaveUnidades={handleSaveUnidades}
-          comandas={comandas}
+          comandas={scopedComandas}
         />
       )}
 
@@ -4027,7 +4233,7 @@ export default function App() {
       )}
 
       {/* MODAL: FECHAMENTO DE CAIXA */}
-      {isShiftCloseModalOpen && activeShift && (
+      {isShiftCloseModalOpen && scopedActiveShift && (
         <div 
           onClick={() => setIsShiftCloseModalOpen(false)}
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn font-sans cursor-pointer"
@@ -4053,22 +4259,22 @@ export default function App() {
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1 bg-slate-50/50 font-sans">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Saldo Inicial:</span>
-                  <span className="font-bold text-slate-800">R$ {Number(activeShift.initialBalance || 0).toFixed(2)}</span>
+                  <span className="font-bold text-slate-800">R$ {Number(scopedActiveShift.initialBalance || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Vendas do Turno (+):</span>
-                  <span className="font-bold text-emerald-600 font-mono">+ R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
+                  <span className="font-bold text-emerald-600 font-mono">+ R$ {Number(getShiftRevenue(scopedActiveShift) || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Sangria/Suprimento:</span>
-                  <span className={`font-bold font-mono ${getShiftCashAdjustment(activeShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
-                    {getShiftCashAdjustment(activeShift) >= 0 ? '+' : '-'} R$ {Math.abs(getShiftCashAdjustment(activeShift)).toFixed(2)}
+                  <span className={`font-bold font-mono ${getShiftCashAdjustment(scopedActiveShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                    {getShiftCashAdjustment(scopedActiveShift) >= 0 ? '+' : '-'} R$ {Math.abs(getShiftCashAdjustment(scopedActiveShift)).toFixed(2)}
                   </span>
                 </div>
                 <hr className="border-slate-200 border-dashed my-1" />
                 <div className="flex justify-between font-extrabold text-slate-900">
                   <span>Valor Calculado Estimado:</span>
-                  <span className="text-frz-primary font-mono">R$ {getExpectedShiftBalance(activeShift).toFixed(2)}</span>
+                  <span className="text-frz-primary font-mono">R$ {getExpectedShiftBalance(scopedActiveShift).toFixed(2)}</span>
                 </div>
               </div>
 
