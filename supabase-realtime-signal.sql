@@ -36,3 +36,27 @@ begin
 exception
     when duplicate_object then null;
 end $$;
+
+-- Mantenha o Realtime somente na tabela leve. Isso evita enviar eventos/payloads
+-- de tabelas grandes e reduz egress no plano Free.
+do $$
+declare
+    table_name text;
+begin
+    foreach table_name in array array['products', 'comandas', 'notifications', 'stock_movements'] loop
+        if exists (
+            select 1
+            from pg_publication_tables
+            where pubname = 'supabase_realtime'
+              and schemaname = 'public'
+              and tablename = table_name
+        ) then
+            execute format('alter publication supabase_realtime drop table public.%I', table_name);
+        end if;
+    end loop;
+end $$;
+
+select schemaname, tablename
+from pg_publication_tables
+where pubname = 'supabase_realtime'
+order by schemaname, tablename;
