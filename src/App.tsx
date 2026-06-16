@@ -144,12 +144,34 @@ export default function App() {
   const [categoriesByScope, setCategoriesByScope] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem('salesflow_categories_by_scope');
     if (saved) try { return JSON.parse(saved); } catch {}
+    const old = localStorage.getItem('salesflow_categories');
+    if (old) {
+      try {
+        const parsed = JSON.parse(old);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.removeItem('salesflow_categories');
+          const k = getScopeKey(DEFAULT_SCOPE);
+          return { [k]: parsed };
+        }
+      } catch {}
+    }
     const k = getScopeKey(DEFAULT_SCOPE);
     return { [k]: DEFAULT_CATEGORIES };
   });
   const [unidadesByScope, setUnidadesByScope] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem('salesflow_unidades_by_scope');
     if (saved) try { return JSON.parse(saved); } catch {}
+    const old = localStorage.getItem('salesflow_unidades');
+    if (old) {
+      try {
+        const parsed = JSON.parse(old);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.removeItem('salesflow_unidades');
+          const k = getScopeKey(DEFAULT_SCOPE);
+          return { [k]: parsed };
+        }
+      } catch {}
+    }
     const k = getScopeKey(DEFAULT_SCOPE);
     return { [k]: DEFAULT_UNIDADES };
   });
