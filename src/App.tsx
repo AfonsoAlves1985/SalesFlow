@@ -53,14 +53,15 @@ import InviteActivation from './components/InviteActivation';
 import UnitManagementModal from './components/UnitManagementModal';
 import FluxoDashboard from './components/FluxoDashboard';
 import DirectPOSView from './components/DirectPOSView';
+import ScopeManagement from './components/ScopeManagement';
 
 import { testSupabaseConnection } from './lib/supabase';
 import { isSupabaseConfigured, pushDataToSupabase, pullStateFromSupabase, subscribeToSupabaseRealtime } from './lib/supabaseSync';
 
-type AdminSubTab = 'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'auditoria' | 'pdv';
+type AdminSubTab = 'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'auditoria' | 'pdv' | 'frentes';
 
 const ROLE_TAB_ACCESS: Record<UserRole, AdminSubTab[]> = {
-  admin: ['comandas', 'pdv', 'caixa_notificacoes', 'estoque', 'fluxo', 'acessos', 'auditoria'],
+  admin: ['comandas', 'pdv', 'caixa_notificacoes', 'estoque', 'fluxo', 'acessos', 'auditoria', 'frentes'],
   manager: ['comandas', 'pdv', 'caixa_notificacoes', 'estoque', 'fluxo', 'auditoria'],
   finance: ['comandas', 'caixa_notificacoes', 'fluxo'],
   stock: ['estoque'],
@@ -3331,6 +3332,30 @@ export default function App() {
                             )}
                           </button>
                           )}
+                          {hasTabAccess('frentes') && (
+                          <button
+                            onClick={() => {
+                              setActiveAdminSubTab('frentes');
+                              if (sidebarCollapsed) setSidebarCollapsed(false);
+                            }}
+                            className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                              activeAdminSubTab === 'frentes'
+                                ? 'bg-frz-primary/15 text-white'
+                                : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                            }`}
+                            title={sidebarCollapsed ? 'Estrutura' : undefined}
+                          >
+                            <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                              <Building2 className="w-4 h-4" />
+                            </span>
+                            {!sidebarCollapsed && (
+                              <span className="text-left min-w-0">
+                                <span className="block truncate">Estrutura</span>
+                                <span className="block text-[9px] text-slate-400 font-semibold">{companies.length} empresas</span>
+                              </span>
+                            )}
+                          </button>
+                          )}
                         </div>
                       )}
                     </nav>
@@ -3381,7 +3406,7 @@ export default function App() {
                   <div className="flex-1 min-w-0">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
-                {!scopedActiveShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && (
+                {!scopedActiveShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && activeAdminSubTab !== 'frentes' && (
                   <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-2xl text-xs flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
                     <div className="flex gap-2 items-start">
                       <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
@@ -3589,6 +3614,18 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                ) : activeAdminSubTab === 'frentes' ? (
+                  <ScopeManagement
+                    companies={companies}
+                    workspaces={workspaces}
+                    spaces={spaces}
+                    setCompanies={setCompanies}
+                    setWorkspaces={setWorkspaces}
+                    setSpaces={setSpaces}
+                    activeCompanyId={activeCompanyId}
+                    activeWorkspaceId={activeWorkspaceId}
+                    activeSpaceId={activeSpaceId}
+                  />
                 ) : activeAdminSubTab === 'caixa_notificacoes' ? (
                   /* GORGEOUS COMMERCIAL REPORTING / SYSTEM PANEL */
                   <div className="space-y-6 animate-fadeIn">
