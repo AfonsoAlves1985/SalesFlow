@@ -19,6 +19,10 @@ function sameScope(a: any, b: any) {
     && (a?.spaceId || DEFAULT_SCOPE.spaceId) === (b?.spaceId || DEFAULT_SCOPE.spaceId);
 }
 
+function getScopeKey(scope: any) {
+  return `${scope?.companyId || DEFAULT_SCOPE.companyId}:${scope?.workspaceId || DEFAULT_SCOPE.workspaceId}:${scope?.spaceId || DEFAULT_SCOPE.spaceId}`;
+}
+
 function isGeneratedModelComanda(c: any) {
   const name = String(c?.clientName || '').trim();
   const course = String(c?.courseOrTraining || '').trim();
@@ -30,8 +34,18 @@ function isGeneratedModelComanda(c: any) {
 }
 
 function sanitizeState(state: any) {
+  const catsByScope = state?.categoriesByScope || {};
+  const unitsByScope = state?.unidadesByScope || {};
+  if (!state?.categoriesByScope && Array.isArray(state?.categories)) {
+    catsByScope[getScopeKey(DEFAULT_SCOPE)] = state.categories;
+  }
+  if (!state?.unidadesByScope && Array.isArray(state?.unidades)) {
+    unitsByScope[getScopeKey(DEFAULT_SCOPE)] = state.unidades;
+  }
   return {
     ...state,
+    categoriesByScope: catsByScope,
+    unidadesByScope: unitsByScope,
     products: Array.isArray(state?.products) ? state.products.map(withDefaultScope) : [],
     stockMovements: Array.isArray(state?.stockMovements) ? state.stockMovements.map(withDefaultScope) : [],
     notifications: Array.isArray(state?.notifications) ? state.notifications.map(withDefaultScope) : [],
@@ -230,10 +244,12 @@ async function pullFromSupabase(defaults: any, light = false) {
     if (generatedIds.length > 0) {
       await supabase.from('comandas').delete().in('id', generatedIds);
     }
+    const scopedCats = (cats.data || []).map((c: any) => c.name);
+    const scopedUnits = (units.data || []).map((u: any) => u.name);
     return sanitizeState({
       ...defaults,
-      categories: (cats.data || []).map((c: any) => c.name),
-      unidades: (units.data || []).map((u: any) => u.name),
+      categoriesByScope: { [getScopeKey(DEFAULT_SCOPE)]: scopedCats },
+      unidadesByScope: { [getScopeKey(DEFAULT_SCOPE)]: scopedUnits },
       products: (prods.data || []).map((p: any) => {
         const localProduct = defaultProducts.find((local: any) => local?.id === p.id);
         return {
@@ -281,9 +297,11 @@ async function syncToSupabase() {
       }
     };
 
+    const allCats = Object.values(db.categoriesByScope || {}).flat();
+    const allUnits = Object.values(db.unidadesByScope || {}).flat();
     await Promise.all([
-      upsertTable('categories', 'name', db.categories.map((n: string) => ({ name: n }))),
-      upsertTable('unidades', 'name', db.unidades.map((n: string) => ({ name: n }))),
+      upsertTable('categories', 'name', allCats.map((n: string) => ({ name: n }))),
+      upsertTable('unidades', 'name', allUnits.map((n: string) => ({ name: n }))),
       upsertTable('products', 'id', db.products.map((p: any) => ({
         company_id: p.companyId || DEFAULT_SCOPE.companyId,
         workspace_id: p.workspaceId || DEFAULT_SCOPE.workspaceId,
@@ -423,15 +441,24 @@ function loadDb() {
     stockMovements: [],
     auditLogs: [],
     receivables: [],
-    categories: ['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios'],
-    unidades: ['Sede Principal', 'Filial Norte', 'Filial Sul'],
+    categoriesByScope: { [getScopeKey(DEFAULT_SCOPE)]: ['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios'] },
+    unidadesByScope: { [getScopeKey(DEFAULT_SCOPE)]: ['Sede Principal', 'Filial Norte', 'Filial Sul'] },
     whatsStatus: 'disconnected',
     whatsNumber: '+55 (11) 99999-9999'
   };
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-      if (data.products) return sanitizeState({ ...defaults, ...data });
+      if (data.products) {
+        const migrated = { ...defaults, ...data };
+        if (!migrated.categoriesByScope && Array.isArray(migrated.categories)) {
+          migrated.categoriesByScope = { [getScopeKey(DEFAULT_SCOPE)]: migrated.categories };
+        }
+        if (!migrated.unidadesByScope && Array.isArray(migrated.unidades)) {
+          migrated.unidadesByScope = { [getScopeKey(DEFAULT_SCOPE)]: migrated.unidades };
+        }
+        return sanitizeState(migrated);
+      }
     }
   } catch {}
   return sanitizeState(defaults);
@@ -444,7 +471,17 @@ function saveDb() {
   } catch {}
 }
 
-function getStateResponse(light: boolean) {
+function getScopeFromReq(req: any) {
+  return {
+    companyId: req.query?.company || DEFAULT_SCOPE.companyId,
+    workspaceId: req.query?.workspace || DEFAULT_SCOPE.workspaceId,
+    spaceId: req.query?.space || DEFAULT_SCOPE.spaceId
+  };
+}
+
+function getStateResponse(light: boolean, req?: any) {
+  const scope = req ? getScopeFromReq(req) : DEFAULT_SCOPE;
+  const sk = getScopeKey(scope);
   const response = !light ? db : {
     ...db,
     products: (db.products || []).map((p: any) => ({
@@ -460,10 +497,17 @@ function getStateResponse(light: boolean) {
       updatedAt: p.updatedAt
     }))
   };
-  return { ...response, __meta: getStateMeta() };
+  return {
+    ...response,
+    categories: (db.categoriesByScope || {})[sk] || [],
+    unidades: (db.unidadesByScope || {})[sk] || [],
+    __meta: getStateMeta(req)
+  };
 }
 
-function getStateMeta() {
+function getStateMeta(req?: any) {
+  const scope = req ? getScopeFromReq(req) : DEFAULT_SCOPE;
+  const sk = getScopeKey(scope);
   const source = JSON.stringify({
     products: (db.products || []).map((p: any) => [p.companyId, p.workspaceId, p.spaceId, p.id, p.stock, p.price, p.category, p.updatedAt]),
     comandas: (db.comandas || []).map((c: any) => [c.companyId, c.workspaceId, c.spaceId, c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
@@ -471,8 +515,8 @@ function getStateMeta() {
     stockMovements: (db.stockMovements || []).slice(0, 5).map((m: any) => [m.id, m.timestamp]),
     auditLogs: (db.auditLogs || []).slice(0, 5).map((a: any) => [a.id, a.timestamp, a.action, a.entityType]),
     receivables: (db.receivables || []).map((r: any) => [r.id, r.status, r.amount, r.paidAmount, r.updatedAt]),
-    categories: db.categories || [],
-    unidades: db.unidades || [],
+    categories: (db.categoriesByScope || {})[sk] || [],
+    unidades: (db.unidadesByScope || {})[sk] || [],
     whatsStatus: db.whatsStatus,
     whatsNumber: db.whatsNumber
   });
@@ -501,12 +545,12 @@ app.get('/api/state', async (req: any, res: any) => {
     saveDb();
   }
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.json(getStateResponse(light));
+  res.json(getStateResponse(light, req));
 });
 
-app.get('/api/state/meta', async (_req: any, res: any) => {
+app.get('/api/state/meta', async (req: any, res: any) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.json(getStateMeta());
+  res.json(getStateMeta(req));
 });
 
 app.post('/api/products/images', async (req: any, res: any) => {
@@ -545,8 +589,9 @@ app.post('/api/state/sync', async (req: any, res: any) => {
   const oldComandaIds = (db.comandas || []).map((c: any) => c.id);
   const oldNotificationIds = (db.notifications || []).map((n: any) => n.id);
   const oldStockMovementIds = (db.stockMovements || []).map((m: any) => m.id);
-  const oldCategoryNames = (db.categories || []).map((name: string) => name);
-  const oldUnitNames = (db.unidades || []).map((name: string) => name);
+  const sk = req.body?.scopeKey || getScopeKey(DEFAULT_SCOPE);
+  const oldCategoryNames = (db.categoriesByScope || {})[sk] || [];
+  const oldUnitNames = (db.unidadesByScope || {})[sk] || [];
 
   const incomingState = { ...req.body };
   if (Array.isArray(incomingState.products)) {
@@ -567,6 +612,16 @@ app.post('/api/state/sync', async (req: any, res: any) => {
   if (Array.isArray(incomingState.notifications)) {
     incomingState.notifications = incomingState.notifications.map(withDefaultScope);
   }
+  if (Array.isArray(incomingState.categories)) {
+    const cats = db.categoriesByScope || {};
+    cats[sk] = incomingState.categories;
+    incomingState.categoriesByScope = cats;
+  }
+  if (Array.isArray(incomingState.unidades)) {
+    const units = db.unidadesByScope || {};
+    units[sk] = incomingState.unidades;
+    incomingState.unidadesByScope = units;
+  }
   Object.assign(db, incomingState);
   saveDb();
 
@@ -576,16 +631,12 @@ app.post('/api/state/sync', async (req: any, res: any) => {
     const removedComandaIds = oldComandaIds.filter((id: string) => !(db.comandas || []).some((c: any) => c.id === id));
     const removedNotificationIds = oldNotificationIds.filter((id: string) => !(db.notifications || []).some((n: any) => n.id === id));
     const removedStockMovementIds = oldStockMovementIds.filter((id: string) => !(db.stockMovements || []).some((m: any) => m.id === id));
-    const removedCategoryNames = oldCategoryNames.filter((name: string) => !(db.categories || []).includes(name));
-    const removedUnitNames = oldUnitNames.filter((name: string) => !(db.unidades || []).includes(name));
     const deletePromises: Promise<any>[] = [];
     if (removedProductIds.length > 0) deletePromises.push(supabase.from('products').delete().in('id', removedProductIds));
     if (removedComandaIds.length > 0) deletePromises.push(supabase.from('comandas').delete().in('id', removedComandaIds));
     if (removedNotificationIds.length > 0) deletePromises.push(supabase.from('notifications').delete().in('id', removedNotificationIds));
     if (removedStockMovementIds.length > 0) deletePromises.push(supabase.from('stock_movements').delete().in('id', removedStockMovementIds));
-    if (removedCategoryNames.length > 0) deletePromises.push(supabase.from('categories').delete().in('name', removedCategoryNames));
-    if (removedUnitNames.length > 0) deletePromises.push(supabase.from('unidades').delete().in('name', removedUnitNames));
-    await Promise.all(deletePromises);
+    if (await Promise.all(deletePromises).then(() => false).catch(() => true)) {}
   }
 
   await syncToSupabase();
@@ -704,6 +755,8 @@ app.post('/api/reset', async (_req: any, res: any) => {
   db.notifications = [];
   db.stockMovements = [];
   db.receivables = [];
+  db.categoriesByScope = {};
+  db.unidadesByScope = {};
   saveDb();
   if (supabase) {
     await Promise.all([

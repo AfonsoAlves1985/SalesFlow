@@ -75,6 +75,9 @@ const isInScope = (item: ScopeFields, scope: Required<ScopeFields>) => (
   (item.workspaceId || DEFAULT_SCOPE.workspaceId) === scope.workspaceId &&
   (item.spaceId || DEFAULT_SCOPE.spaceId) === scope.spaceId
 );
+const getScopeKey = (scope: ScopeFields) => `${scope.companyId || DEFAULT_SCOPE.companyId}:${scope.workspaceId || DEFAULT_SCOPE.workspaceId}:${scope.spaceId || DEFAULT_SCOPE.spaceId}`;
+const DEFAULT_CATEGORIES = ['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios'];
+const DEFAULT_UNIDADES = ['Sede Principal', 'Filial Norte', 'Filial Sul'];
 
 export default function App() {
   const initialComandaParam = typeof window !== 'undefined'
@@ -138,8 +141,18 @@ export default function App() {
   // Data State loading from localStorage with Initial Failback
   const [products, setProducts] = useState<Product[]>([]);
   const [comandas, setComandas] = useState<Comanda[]>([]);
-  const [categories, setCategories] = useState<string[]>(['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios']);
-  const [unidades, setUnidades] = useState<string[]>(['Sede Principal', 'Filial Norte', 'Filial Sul']);
+  const [categoriesByScope, setCategoriesByScope] = useState<Record<string, string[]>>(() => {
+    const saved = localStorage.getItem('salesflow_categories_by_scope');
+    if (saved) try { return JSON.parse(saved); } catch {}
+    const k = getScopeKey(DEFAULT_SCOPE);
+    return { [k]: DEFAULT_CATEGORIES };
+  });
+  const [unidadesByScope, setUnidadesByScope] = useState<Record<string, string[]>>(() => {
+    const saved = localStorage.getItem('salesflow_unidades_by_scope');
+    if (saved) try { return JSON.parse(saved); } catch {}
+    const k = getScopeKey(DEFAULT_SCOPE);
+    return { [k]: DEFAULT_UNIDADES };
+  });
   const [companies, setCompanies] = useState<Company[]>([DEFAULT_COMPANY]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([DEFAULT_WORKSPACE]);
   const [spaces, setSpaces] = useState<Space[]>([DEFAULT_SPACE]);
@@ -147,6 +160,9 @@ export default function App() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => initialWorkspaceParam || localStorage.getItem('salesflow_active_workspace_id') || DEFAULT_SCOPE.workspaceId);
   const [activeSpaceId, setActiveSpaceId] = useState(() => initialSpaceParam || localStorage.getItem('salesflow_active_space_id') || DEFAULT_SCOPE.spaceId);
   const activeScope = { companyId: activeCompanyId, workspaceId: activeWorkspaceId, spaceId: activeSpaceId };
+  const scopeKey = getScopeKey(activeScope);
+  const scopedCategories = categoriesByScope[scopeKey] || DEFAULT_CATEGORIES;
+  const scopedUnidades = unidadesByScope[scopeKey] || DEFAULT_UNIDADES;
   const activeCompany = companies.find(company => company.id === activeCompanyId) || DEFAULT_COMPANY;
   const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId) || DEFAULT_WORKSPACE;
   const activeSpace = spaces.find(space => space.id === activeSpaceId) || DEFAULT_SPACE;
@@ -309,8 +325,8 @@ export default function App() {
   const stockMovementsRef = useRef<StockMovement[]>(stockMovements);
   const auditLogsRef = useRef<AuditLogEntry[]>(auditLogs);
   const receivablesRef = useRef<Receivable[]>(receivables);
-  const categoriesRef = useRef<string[]>(categories);
-  const unidadesRef = useRef<string[]>(unidades);
+  const categoriesRef = useRef<string[]>(scopedCategories);
+  const unidadesRef = useRef<string[]>(scopedUnidades);
   const comandaSyncGuardRef = useRef(false);
   const comandaCooldownUntilRef = useRef(0);
   const comandaVersionRef = useRef(0);
@@ -324,9 +340,9 @@ export default function App() {
     stockMovementsRef.current = stockMovements;
     auditLogsRef.current = auditLogs;
     receivablesRef.current = receivables;
-    categoriesRef.current = categories;
-    unidadesRef.current = unidades;
-  }, [products, comandas, notifications, stockMovements, auditLogs, receivables, categories, unidades]);
+    categoriesRef.current = scopedCategories;
+    unidadesRef.current = scopedUnidades;
+  }, [products, comandas, notifications, stockMovements, auditLogs, receivables, categoriesByScope, unidadesByScope, activeScope]);
 
   useEffect(() => {
     if (!isInitialized || products.length === 0) return;
@@ -547,13 +563,11 @@ export default function App() {
       }
 
       if (Array.isArray(data.categories) && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
-        setCategories(data.categories);
-        localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
+        setCategoriesByScope(prev => ({ ...prev, [scopeKey]: data.categories }));
       }
 
       if (Array.isArray(data.unidades) && JSON.stringify(data.unidades) !== JSON.stringify(unidadesRef.current)) {
-        setUnidades(data.unidades);
-        localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+        setUnidadesByScope(prev => ({ ...prev, [scopeKey]: data.unidades }));
       }
 
       if (Array.isArray(data.notifications) && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
@@ -609,8 +623,8 @@ export default function App() {
     const cachedNotifications = localStorage.getItem('salesflow_notifications');
     const cachedAuditLogs = localStorage.getItem('salesflow_audit_logs');
     const cachedReceivables = localStorage.getItem('salesflow_receivables');
-    const cachedCategories = localStorage.getItem('salesflow_categories');
-    const cachedUnidades = localStorage.getItem('salesflow_unidades');
+    const cachedCategoriesByScope = localStorage.getItem('salesflow_categories_by_scope');
+    const cachedUnidadesByScope = localStorage.getItem('salesflow_unidades_by_scope');
     const cachedCompanies = localStorage.getItem('salesflow_companies');
     const cachedWorkspaces = localStorage.getItem('salesflow_workspaces');
     const cachedSpaces = localStorage.getItem('salesflow_spaces');
@@ -661,27 +675,31 @@ export default function App() {
     }
     setComandas(loadedComandas);
 
-    let loadedCategories = ['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios'];
-    if (cachedCategories) {
+    let loadedCategories: string[] | undefined;
+    if (cachedCategoriesByScope) {
       try {
-        const parsed = JSON.parse(cachedCategories);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedCategories = parsed;
+        const parsed = JSON.parse(cachedCategoriesByScope);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setCategoriesByScope(parsed);
+          const k = getScopeKey(activeScope);
+          loadedCategories = parsed[k];
         }
       } catch (e) {}
     }
-    setCategories(loadedCategories);
+    if (!loadedCategories) loadedCategories = DEFAULT_CATEGORIES;
 
-    let loadedUnidades = ['Sede Principal', 'Filial Norte', 'Filial Sul'];
-    if (cachedUnidades) {
+    let loadedUnidades: string[] | undefined;
+    if (cachedUnidadesByScope) {
       try {
-        const parsed = JSON.parse(cachedUnidades);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedUnidades = parsed;
+        const parsed = JSON.parse(cachedUnidadesByScope);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setUnidadesByScope(parsed);
+          const k = getScopeKey(activeScope);
+          loadedUnidades = parsed[k];
         }
       } catch (e) {}
     }
-    setUnidades(loadedUnidades);
+    if (!loadedUnidades) loadedUnidades = DEFAULT_UNIDADES;
 
     if (cachedSession) {
       try {
@@ -737,15 +755,15 @@ export default function App() {
         }
         let needsSyncToServer = false;
 
-        if (data.categories && Array.isArray(data.categories) && data.categories.length > 0 && !cachedCategories) {
-          setCategories(data.categories);
-          localStorage.setItem('salesflow_categories', JSON.stringify(data.categories));
+        if (data.categories && Array.isArray(data.categories) && data.categories.length > 0 && !cachedCategoriesByScope) {
+          const key = getScopeKey(activeScope);
+          setCategoriesByScope(prev => ({ ...prev, [key]: data.categories }));
           loadedCategories = data.categories;
         }
 
-        if (data.unidades && Array.isArray(data.unidades) && data.unidades.length > 0 && !cachedUnidades) {
-          setUnidades(data.unidades);
-          localStorage.setItem('salesflow_unidades', JSON.stringify(data.unidades));
+        if (data.unidades && Array.isArray(data.unidades) && data.unidades.length > 0 && !cachedUnidadesByScope) {
+          const key = getScopeKey(activeScope);
+          setUnidadesByScope(prev => ({ ...prev, [key]: data.unidades }));
           loadedUnidades = data.unidades;
         }
 
@@ -845,8 +863,9 @@ export default function App() {
             body: JSON.stringify({ 
               products: loadedProducts, 
               comandas: loadedComandas, 
-              categories: loadedCategories, 
+              categories: loadedCategories,
               unidades: loadedUnidades,
+              scopeKey: getScopeKey(activeScope),
               notifications: data.notifications || [],
               auditLogs: auditLogsRef.current,
               receivables: loadedReceivables
@@ -1075,9 +1094,8 @@ export default function App() {
         return previous && previous.category !== product.category;
       }).length
       : 0;
-    setCategories(updatedCategories);
+    setCategoriesByScope(prev => ({ ...prev, [scopeKey]: updatedCategories }));
     const version = Date.now();
-    localStorage.setItem('salesflow_categories', JSON.stringify(updatedCategories));
     localStorage.setItem('salesflow_comanda_version', version.toString());
     comandaVersionRef.current = version;
     
@@ -1109,6 +1127,7 @@ export default function App() {
         comandas: comandasRef.current, 
         notifications: notificationsRef.current, 
         categories: updatedCategories,
+        scopeKey,
         receivables: receivablesRef.current,
         auditLogs: auditLogsRef.current
       })
@@ -1131,9 +1150,8 @@ export default function App() {
         return previous && previous.unit !== comanda.unit;
       }).length
       : 0;
-    setUnidades(updatedUnidades);
+    setUnidadesByScope(prev => ({ ...prev, [scopeKey]: updatedUnidades }));
     const version = Date.now();
-    localStorage.setItem('salesflow_unidades', JSON.stringify(updatedUnidades));
     localStorage.setItem('salesflow_comanda_version', version.toString());
     comandaVersionRef.current = version;
     
@@ -1155,6 +1173,7 @@ export default function App() {
         notifications: notificationsRef.current, 
         categories: categoriesRef.current,
         unidades: updatedUnidades,
+        scopeKey,
         receivables: receivablesRef.current,
         auditLogs: auditLogsRef.current
       })
@@ -1251,6 +1270,14 @@ export default function App() {
   }, [spaces]);
 
   useEffect(() => {
+    localStorage.setItem('salesflow_categories_by_scope', JSON.stringify(categoriesByScope));
+  }, [categoriesByScope]);
+
+  useEffect(() => {
+    localStorage.setItem('salesflow_unidades_by_scope', JSON.stringify(unidadesByScope));
+  }, [unidadesByScope]);
+
+  useEffect(() => {
     localStorage.setItem('salesflow_active_company_id', activeCompanyId);
     localStorage.setItem('salesflow_active_workspace_id', activeWorkspaceId);
     localStorage.setItem('salesflow_active_space_id', activeSpaceId);
@@ -1259,18 +1286,18 @@ export default function App() {
 
   // Synchronize operating unit with the units catalog list
   useEffect(() => {
-    if (unidades.length > 0 && !unidades.includes(operatingUnit)) {
-      setOperatingUnit(unidades[0]);
-      localStorage.setItem('salesflow_operating_unit', unidades[0]);
+    if (scopedUnidades.length > 0 && !scopedUnidades.includes(operatingUnit)) {
+      setOperatingUnit(scopedUnidades[0]);
+      localStorage.setItem('salesflow_operating_unit', scopedUnidades[0]);
     }
-  }, [unidades, operatingUnit]);
+  }, [scopedUnidades, operatingUnit]);
 
   // Set default client unit when create comanda modal is opened using the operating unit
   useEffect(() => {
-    if (isNewComandaModalOpen && unidades.length > 0) {
-      setNewClientUnit(operatingUnit || unidades[0]);
+    if (isNewComandaModalOpen && scopedUnidades.length > 0) {
+      setNewClientUnit(operatingUnit || scopedUnidades[0]);
     }
-  }, [isNewComandaModalOpen, unidades, operatingUnit]);
+  }, [isNewComandaModalOpen, scopedUnidades, operatingUnit]);
 
   // Simulate WhatsApp web scan connection auto-completion after 4.5 seconds of showing QR code
   useEffect(() => {
@@ -2558,7 +2585,7 @@ export default function App() {
       status: 'Pendente',
       createdAt: new Date().toISOString(),
       items: [],
-      unit: meta.unit || (unidades && unidades[0]) || 'Sede Principal'
+      unit: meta.unit || (scopedUnidades && scopedUnidades[0]) || 'Sede Principal'
     };
 
     const safeComandas = Array.isArray(comandas) ? comandas : [];
@@ -2680,7 +2707,7 @@ export default function App() {
       month: newClientMonth,
       email: newClientEmail,
       phone: newClientPhone,
-      unit: newClientUnit || unidades[0] || 'Sede Principal'
+      unit: newClientUnit || scopedUnidades[0] || 'Sede Principal'
     });
 
     setIsNewComandaModalOpen(false);
@@ -3005,7 +3032,7 @@ export default function App() {
                         className="bg-transparent border-none text-xs font-black text-frz-primary focus:outline-none cursor-pointer pr-5 font-mono select-none"
                         style={{ colorScheme: 'dark' }}
                       >
-                        {unidades.map(u => (
+                        {scopedUnidades.map(u => (
                           <option key={u} value={u} className="bg-slate-900 text-white font-sans font-bold">{u}</option>
                         ))}
                       </select>
@@ -3470,7 +3497,7 @@ export default function App() {
                     products={scopedProducts}
                     onSaveProduct={handleSaveProduct}
                     onDeleteProduct={handleDeleteProduct}
-                    categories={categories}
+                    categories={scopedCategories}
                     onSaveCategories={handleSaveCategories}
                   />
                 ) : activeAdminSubTab === 'fluxo' ? (
@@ -3891,7 +3918,7 @@ export default function App() {
                         onSelect={(c) => setSelectedComandaId(c.id)}
                         onOpenCreateModal={() => setIsNewComandaModalOpen(true)}
                         onOpenManageUnits={() => setIsManageUnitsModalOpen(true)}
-                        unidades={unidades}
+                        unidades={scopedUnidades}
                         operatingUnit={operatingUnit}
                       />
                     )}
@@ -4043,7 +4070,7 @@ export default function App() {
                   onChange={(e) => setNewClientUnit(e.target.value)}
                   className="w-full px-3 py-2 border rounded-xl text-xs font-bold text-slate-800 bg-slate-[#F8FAFC]/50 cursor-pointer"
                 >
-                  {unidades.map(u => (
+                  {scopedUnidades.map(u => (
                      <option key={u} value={u}>{u}</option>
                   ))}
                 </select>
@@ -4090,7 +4117,7 @@ export default function App() {
         <UnitManagementModal
           isOpen={isManageUnitsModalOpen}
           onClose={() => setIsManageUnitsModalOpen(false)}
-          unidades={unidades}
+          unidades={scopedUnidades}
           onSaveUnidades={handleSaveUnidades}
           comandas={scopedComandas}
         />
