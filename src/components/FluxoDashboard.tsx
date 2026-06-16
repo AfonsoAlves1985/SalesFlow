@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { StockMovement, Product, Comanda, CashierShift } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Package, Download, Printer, Calendar, Filter, Image as ImageIcon, Wallet, FileSpreadsheet } from 'lucide-react';
+import { StockMovement, Product, Comanda, CashierShift, Receivable, ReceivableStatus } from '../types';
+import { TrendingUp, TrendingDown, DollarSign, Package, Download, Printer, Calendar, Filter, Image as ImageIcon, Wallet, FileSpreadsheet, CheckCircle2, Ban } from 'lucide-react';
 
 interface Props {
   products: Product[];
   comandas: Comanda[];
+  receivables?: Receivable[];
+  onUpdateReceivable?: (receivable: Receivable) => void;
   stockMovements: StockMovement[];
   setStockMovements: React.Dispatch<React.SetStateAction<StockMovement[]>>;
   activeShift?: CashierShift | null;
@@ -13,7 +15,7 @@ interface Props {
 
 type FilterPreset = 'today' | 'week' | 'month' | 'year' | 'custom';
 
-export default function FluxoDashboard({ products, comandas, stockMovements, setStockMovements, activeShift, shiftHistory = [] }: Props) {
+export default function FluxoDashboard({ products, comandas, receivables = [], onUpdateReceivable, stockMovements, setStockMovements, activeShift, shiftHistory = [] }: Props) {
   const toDateInputValue = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -28,6 +30,10 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
   const [selectedCourse, setSelectedCourse] = useState('all');
+  const [receivableStatusFilter, setReceivableStatusFilter] = useState<'all' | ReceivableStatus>('all');
+  const [receivableSearch, setReceivableSearch] = useState('');
+  const [receivablePaymentInputs, setReceivablePaymentInputs] = useState<Record<string, string>>({});
+  const [receivablePaymentMethods, setReceivablePaymentMethods] = useState<Record<string, NonNullable<Receivable['paymentMethod']>>>({});
   const [loading, setLoading] = useState(false);
 
   const applyPreset = (preset: FilterPreset) => {
@@ -228,6 +234,118 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
       closedAt: comanda.closedAt || '',
     })));
   }, [courseComandasPeriodo]);
+
+  const receivableRows = useMemo(() => {
+    const query = receivableSearch.trim().toLowerCase();
+    return receivables
+      .filter(receivable => selectedCourse === 'all' || receivable.courseOrTraining === selectedCourse)
+      .filter(receivable => receivableStatusFilter === 'all' || receivable.status === receivableStatusFilter)
+      .filter(receivable => {
+        if (isInPeriod(receivable.createdAt) || isInPeriod(receivable.updatedAt) || isInPeriod(receivable.paidAt) || isInPeriod(receivable.canceledAt)) return true;
+        const comanda = comandas.find(c => c.id === receivable.comandaId);
+        return comanda ? isComandaInReportPeriod(comanda) : false;
+      })
+      .filter(receivable => {
+        if (!query) return true;
+        return [receivable.clientName, receivable.comandaId, receivable.courseOrTraining, receivable.unit, receivable.month, receivable.status]
+          .filter(Boolean)
+          .some(value => String(value).toLowerCase().includes(query));
+      })
+      .sort((a, b) => {
+        const statusOrder: Record<ReceivableStatus, number> = { Pendente: 0, Parcial: 1, Pago: 2, Cancelado: 3 };
+        return statusOrder[a.status] - statusOrder[b.status]
+          || new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+      });
+  }, [receivables, selectedCourse, receivableStatusFilter, receivableSearch, startDate, endDate, comandas]);
+
+  const receivableTotals = useMemo(() => {
+    return receivableRows.reduce((acc, receivable) => {
+      if (receivable.status !== 'Cancelado') {
+        acc.total += receivable.amount;
+        acc.paid += receivable.paidAmount;
+        acc.open += Math.max(receivable.amount - receivable.paidAmount, 0);
+      }
+      acc.counts[receivable.status] += 1;
+      return acc;
+    }, {
+      total: 0,
+      paid: 0,
+      open: 0,
+      counts: { Pendente: 0, Parcial: 0, Pago: 0, Cancelado: 0 } as Record<ReceivableStatus, number>
+    });
+  }, [receivableRows]);
+
+  const paymentMethodTotals = useMemo(() => {
+    return receivableRows.reduce((acc, receivable) => {
+      if (receivable.status === 'Cancelado' || receivable.paidAmount <= 0) return acc;
+      const method = receivable.paymentMethod || 'Dinheiro';
+      acc[method] = (acc[method] || 0) + receivable.paidAmount;
+      return acc;
+    }, {} as Record<NonNullable<Receivable['paymentMethod']>, number>);
+  }, [receivableRows]);
+
+  const getReceivableStatusClass = (status: ReceivableStatus) => {
+    switch (status) {
+      case 'Pago': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+      case 'Parcial': return 'bg-blue-50 text-blue-700 border-blue-100';
+      case 'Cancelado': return 'bg-slate-100 text-slate-500 border-slate-200';
+      default: return 'bg-amber-50 text-amber-700 border-amber-100';
+    }
+  };
+
+  const updateReceivablePayment = (receivable: Receivable, nextPaidAmount: number, statusOverride?: ReceivableStatus, notes?: string) => {
+    const paidAmount = Math.min(Math.max(nextPaidAmount, 0), receivable.amount);
+    const status = statusOverride || (paidAmount <= 0 ? 'Pendente' : paidAmount >= receivable.amount ? 'Pago' : 'Parcial');
+    const paymentMethod = receivablePaymentMethods[receivable.id] || receivable.paymentMethod || 'Dinheiro';
+    onUpdateReceivable?.({
+      ...receivable,
+      paidAmount,
+      status,
+      paymentMethod: status === 'Cancelado' ? receivable.paymentMethod : paymentMethod,
+      paidAt: status === 'Pago' ? (receivable.paidAt || new Date().toISOString()) : receivable.paidAt,
+      canceledAt: status === 'Cancelado' ? (receivable.canceledAt || new Date().toISOString()) : undefined,
+      notes: notes ?? receivable.notes
+    });
+  };
+
+  const handlePartialReceivablePayment = (receivable: Receivable) => {
+    const value = Number((receivablePaymentInputs[receivable.id] || '').replace(',', '.'));
+    if (!Number.isFinite(value) || value <= 0) {
+      alert('Informe um valor de baixa parcial válido.');
+      return;
+    }
+    updateReceivablePayment(receivable, receivable.paidAmount + value, undefined, `Baixa parcial de ${formatCurrency(value)}.`);
+    setReceivablePaymentInputs(prev => ({ ...prev, [receivable.id]: '' }));
+  };
+
+  const exportReceivablesCSV = () => {
+    const lines = [
+      'RECEBIVEIS SALESFLOW',
+      `Periodo;${startDate};${endDate}`,
+      `Curso;${selectedCourse === 'all' ? 'Todos' : selectedCourse}`,
+      `Status;${receivableStatusFilter === 'all' ? 'Todos' : receivableStatusFilter}`,
+      '',
+      'Comanda;Aluno/Cliente;Curso;Unidade;Mes;Status;Forma Pagamento;Valor Total;Valor Baixado;Saldo;Criacao;Atualizacao;Observacao'
+    ];
+    receivableRows.forEach(receivable => {
+      lines.push([
+        escapeCSV(receivable.comandaId),
+        escapeCSV(receivable.clientName),
+        escapeCSV(receivable.courseOrTraining),
+        escapeCSV(receivable.unit || ''),
+        escapeCSV(receivable.month),
+        escapeCSV(receivable.status),
+        escapeCSV(receivable.paymentMethod || ''),
+        formatNumber(receivable.amount),
+        formatNumber(receivable.paidAmount),
+        formatNumber(Math.max(receivable.amount - receivable.paidAmount, 0)),
+        escapeCSV(formatDate(receivable.createdAt)),
+        escapeCSV(formatDate(receivable.updatedAt)),
+        escapeCSV(receivable.notes || ''),
+      ].join(';'));
+    });
+    downloadFile(`\ufeff${lines.join('\n')}`, `recebiveis-${startDate}-${endDate}.csv`, 'text/csv;charset=utf-8;');
+  };
 
   const vendasComandaPeriodo = useMemo(() => {
     return closedComandasPeriodo
@@ -811,6 +929,177 @@ export default function FluxoDashboard({ products, comandas, stockMovements, set
                     <td className="p-3 text-right font-mono font-black text-emerald-700">{formatCurrency(row.total)}</td>
                   </tr>
                 ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Receivables */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          <div className="flex-1">
+            <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Financeiro de Recebíveis</span>
+            <h3 className="text-sm font-extrabold text-slate-800 mt-0.5">Contas a Receber por Comanda</h3>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Cada comanda com consumo gera um recebível financeiro com baixa pendente, parcial, paga ou cancelada.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Status</label>
+              <select
+                value={receivableStatusFilter}
+                onChange={e => setReceivableStatusFilter(e.target.value as 'all' | ReceivableStatus)}
+                className="min-w-[150px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-frz-primary"
+              >
+                <option value="all">Todos</option>
+                <option value="Pendente">Pendente</option>
+                <option value="Parcial">Parcial</option>
+                <option value="Pago">Pago</option>
+                <option value="Cancelado">Cancelado</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Busca</label>
+              <input
+                type="text"
+                value={receivableSearch}
+                onChange={e => setReceivableSearch(e.target.value)}
+                placeholder="Aluno, comanda, unidade..."
+                className="min-w-[220px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 placeholder:text-slate-500 focus:outline-none focus:border-frz-primary"
+              />
+            </div>
+            <button onClick={exportReceivablesCSV} className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[10px] font-black uppercase transition flex items-center gap-1 cursor-pointer">
+              <Download className="w-3.5 h-3.5" /> CSV Recebíveis
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-5">
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total Lançado</div>
+            <div className="text-xl font-black text-slate-800 font-mono mt-1">{formatCurrency(receivableTotals.total)}</div>
+          </div>
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600">Baixado</div>
+            <div className="text-xl font-black text-emerald-700 font-mono mt-1">{formatCurrency(receivableTotals.paid)}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-amber-600">Em Aberto</div>
+            <div className="text-xl font-black text-amber-700 font-mono mt-1">{formatCurrency(receivableTotals.open)}</div>
+          </div>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <div className="text-[10px] font-black uppercase tracking-wider text-blue-600">Registros</div>
+            <div className="text-xl font-black text-blue-700 mt-1">{receivableRows.length}</div>
+            <div className="text-[10px] text-blue-700 mt-1 font-bold">
+              {receivableTotals.counts.Pendente} pend. / {receivableTotals.counts.Parcial} parc. / {receivableTotals.counts.Pago} pagos
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+          {(['Dinheiro', 'Pix', 'Cartao', 'Outro'] as NonNullable<Receivable['paymentMethod']>[]).map(method => (
+            <div key={method} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+              <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">{method === 'Cartao' ? 'Cartão' : method}</div>
+              <div className="text-sm font-black text-slate-800 font-mono mt-0.5">{formatCurrency(paymentMethodTotals[method] || 0)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto max-h-[360px] overflow-y-auto mt-4 border border-slate-100 rounded-xl">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 sticky top-0">
+              <tr>
+                <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Aluno/Cliente</th>
+                <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Curso / Unidade</th>
+                <th className="text-center p-3 font-extrabold text-slate-500 text-[10px] uppercase">Status</th>
+                <th className="text-right p-3 font-extrabold text-slate-500 text-[10px] uppercase">Total</th>
+                <th className="text-right p-3 font-extrabold text-slate-500 text-[10px] uppercase">Baixado</th>
+                <th className="text-right p-3 font-extrabold text-slate-500 text-[10px] uppercase">Saldo</th>
+                <th className="text-left p-3 font-extrabold text-slate-500 text-[10px] uppercase">Forma / Baixa Manual</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {receivableRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-6 text-center text-slate-400">Nenhum recebível encontrado para os filtros selecionados.</td>
+                </tr>
+              ) : (
+                receivableRows.map(receivable => {
+                  const balance = Math.max(receivable.amount - receivable.paidAmount, 0);
+                  const isFinal = receivable.status === 'Pago' || receivable.status === 'Cancelado';
+                  return (
+                    <tr key={receivable.id} className="hover:bg-slate-50 transition align-top">
+                      <td className="p-3">
+                        <div className="font-bold text-slate-800">{receivable.clientName}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{receivable.comandaId} · {receivable.month}</div>
+                      </td>
+                      <td className="p-3 text-slate-500">
+                        <div className="font-bold text-slate-700 max-w-[220px] truncate" title={receivable.courseOrTraining}>{receivable.courseOrTraining}</div>
+                        <div className="text-[10px]">{receivable.unit || '-'}</div>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${getReceivableStatusClass(receivable.status)}`}>
+                          {receivable.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-mono font-black text-slate-800">{formatCurrency(receivable.amount)}</td>
+                      <td className="p-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(receivable.paidAmount)}</td>
+                      <td className="p-3 text-right font-mono font-bold text-amber-700">{formatCurrency(balance)}</td>
+                      <td className="p-3 min-w-[250px]">
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <select
+                            disabled={isFinal || !onUpdateReceivable}
+                            value={receivablePaymentMethods[receivable.id] || receivable.paymentMethod || 'Dinheiro'}
+                            onChange={e => setReceivablePaymentMethods(prev => ({ ...prev, [receivable.id]: e.target.value as NonNullable<Receivable['paymentMethod']> }))}
+                            className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            <option value="Dinheiro">Dinheiro</option>
+                            <option value="Pix">Pix</option>
+                            <option value="Cartao">Cartão</option>
+                            <option value="Outro">Outro</option>
+                          </select>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            disabled={isFinal || !onUpdateReceivable}
+                            value={receivablePaymentInputs[receivable.id] || ''}
+                            onChange={e => setReceivablePaymentInputs(prev => ({ ...prev, [receivable.id]: e.target.value }))}
+                            placeholder="Valor"
+                            className="w-20 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+                          />
+                          <button
+                            type="button"
+                            disabled={isFinal || !onUpdateReceivable}
+                            onClick={() => handlePartialReceivablePayment(receivable)}
+                            className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 disabled:text-slate-400 disabled:bg-slate-100 rounded-lg text-[9px] font-black uppercase transition cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            Parcial
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isFinal || !onUpdateReceivable}
+                            onClick={() => updateReceivablePayment(receivable, receivable.amount, 'Pago', 'Baixa total manual.')}
+                            className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 disabled:text-slate-400 disabled:bg-slate-100 rounded-lg text-[9px] font-black uppercase transition cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            <CheckCircle2 className="w-3 h-3" /> Quitar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={receivable.status === 'Cancelado' || !onUpdateReceivable}
+                            onClick={() => updateReceivablePayment(receivable, receivable.paidAmount, 'Cancelado', 'Recebível cancelado manualmente.')}
+                            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:text-slate-400 disabled:bg-slate-100 rounded-lg text-[9px] font-black uppercase transition cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            <Ban className="w-3 h-3" /> Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

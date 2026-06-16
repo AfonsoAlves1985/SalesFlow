@@ -18,6 +18,7 @@ interface DirectPOSViewProps {
   stockMovements?: StockMovement[];
   onStockNotification?: (type: 'entrada' | 'saida' | 'ajuste', productName: string, quantity: number, reference: string) => void;
   verifyRefundLogin?: (login: string, password: string) => boolean;
+  onAudit?: (event: { action: 'criou' | 'estornou'; saleNumber: string; customerName: string; total: number; itemCount: number }) => void;
 }
 
 interface CartItem {
@@ -46,7 +47,8 @@ export default function DirectPOSView({
   setProducts,
   stockMovements = [],
   onStockNotification,
-  verifyRefundLogin
+  verifyRefundLogin,
+  onAudit
 }: DirectPOSViewProps) {
   const [activeTab, setActiveTab] = useState<'venda' | 'estornos'>('venda');
   const [saleNumber, setSaleNumber] = useState(createSaleNumber);
@@ -310,6 +312,13 @@ export default function DirectPOSView({
     const updatedHistory = [saleRecord, ...saleHistory];
     setSaleHistory(updatedHistory);
     localStorage.setItem('salesflow_pdv_history', JSON.stringify(updatedHistory));
+    onAudit?.({
+      action: 'criou',
+      saleNumber: currentSaleNumber,
+      customerName: saleRecord.customerName,
+      total: saleRecord.total,
+      itemCount: saleRecord.items.length
+    });
 
     setLastSale({
       saleNumber: currentSaleNumber,
@@ -384,6 +393,13 @@ export default function DirectPOSView({
       const updated = prev.filter(s => s.saleNumber !== sale.saleNumber);
       localStorage.setItem('salesflow_pdv_history', JSON.stringify(updated));
       return updated;
+    });
+    onAudit?.({
+      action: 'estornou',
+      saleNumber: sale.saleNumber,
+      customerName: sale.customerName || 'Cliente consumidor',
+      total: sale.total,
+      itemCount: sale.items.length
     });
 
     alert(`Venda Nº ${sale.saleNumber} estornada com sucesso!`);

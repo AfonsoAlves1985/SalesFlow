@@ -52,6 +52,7 @@ export default function ClientMobileView({
   const [selectedProductId, setSelectedProductId] = useState('');
   const [orderQuantity, setOrderQuantity] = useState(1);
   const [previewProductId, setPreviewProductId] = useState<string | null>(null);
+  const [orderFeedback, setOrderFeedback] = useState('');
 
   // Signature sequence states
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -69,6 +70,10 @@ export default function ClientMobileView({
   const [showSimulatedAlert, setShowSimulatedAlert] = useState(false);
   const [alertContent, setAlertContent] = useState<{ title: string; body: string } | null>(null);
 
+  const selectedOrderProduct = products.find(p => p.id === selectedProductId);
+  const signedItemsCount = currentComanda?.items.filter(item => !!item.signature).length || 0;
+  const pendingSignatureCount = Math.max((currentComanda?.items.length || 0) - signedItemsCount, 0);
+
   // Auto-reset alert status if cashier triggers a fresh real-time update
   React.useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -81,6 +86,12 @@ export default function ClientMobileView({
       setIsReminderDismissed(false);
     }
   }, [currentComanda?.closureReminderActive]);
+
+  React.useEffect(() => {
+    if (!orderFeedback) return;
+    const timer = setTimeout(() => setOrderFeedback(''), 5000);
+    return () => clearTimeout(timer);
+  }, [orderFeedback]);
 
   const playChime = () => {
     try {
@@ -210,6 +221,8 @@ export default function ClientMobileView({
     } else {
       // Placing a new order with instant signature
       onAddProductFromClient(currentComanda.id, selectedProductId, orderQuantity, signatureDataUrl);
+      const productName = products.find(p => p.id === selectedProductId)?.name || 'item';
+      setOrderFeedback(`${orderQuantity}x ${productName} confirmado e assinado. Acompanhe abaixo em Meus Pedidos.`);
       // Reset order state
       setIsOrdering(false);
       setSelectedProductId('');
@@ -386,6 +399,7 @@ export default function ClientMobileView({
                     <button
                       onClick={() => {
                         setSelectedProductId(prod.id);
+                        setOrderQuantity(current => Math.min(Math.max(current, 1), Math.max(prod.stock, 1)));
                         setPreviewProductId(null);
                       }}
                       disabled={prod.stock === 0}
@@ -763,11 +777,24 @@ export default function ClientMobileView({
                   <div className="text-xl font-black text-slate-800 mt-0.5">
                     R$ {getComandaTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
+                  <div className="text-[9px] text-slate-500 mt-1 font-bold">
+                    {currentComanda.items.length} pedido(s) · {signedItemsCount} assinado(s){pendingSignatureCount > 0 ? ` · ${pendingSignatureCount} pendente(s)` : ''}
+                  </div>
                 </div>
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-600 animate-pulse">
                   {currentComanda.status}
                 </span>
               </div>
+
+              {orderFeedback && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-2xl mb-4.5 flex items-start gap-2.5 animate-slideDown text-left">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-wider block">Pedido enviado</span>
+                    <p className="text-[10px] font-bold leading-snug mt-0.5">{orderFeedback}</p>
+                  </div>
+                </div>
+              )}
 
               {/* Real-time Closure Reminder Active banner indicator */}
               {currentComanda.closureReminderActive && (
@@ -915,6 +942,16 @@ export default function ClientMobileView({
                       </div>
                     </div>
 
+                    {selectedOrderProduct && (
+                      <div className="bg-amber-50/80 border border-amber-100 rounded-xl p-3 text-left">
+                        <span className="text-[8px] font-black uppercase tracking-wider text-amber-700 block">Item selecionado para assinatura</span>
+                        <div className="flex items-center justify-between gap-3 mt-1">
+                          <span className="text-xs font-black text-slate-800 truncate">{selectedOrderProduct.name}</span>
+                          <span className="text-[10px] font-mono font-bold text-amber-700 shrink-0">Estoque: {selectedOrderProduct.stock}</span>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
                       <div className="flex-1">
                         <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Quantidade</label>
@@ -929,14 +966,14 @@ export default function ClientMobileView({
                           <input
                             type="number"
                             min="1"
-                            max="20"
+                            max={selectedOrderProduct?.stock || 20}
                             value={orderQuantity}
-                            onChange={(e) => setOrderQuantity(Math.max(1, Number(e.target.value)))}
+                            onChange={(e) => setOrderQuantity(Math.min(selectedOrderProduct?.stock || 20, Math.max(1, Number(e.target.value))))}
                             className="w-full bg-transparent text-xs font-bold py-2 text-center focus:outline-none"
                           />
                           <button
                             type="button"
-                            onClick={() => setOrderQuantity(Math.min(20, orderQuantity + 1))}
+                            onClick={() => setOrderQuantity(Math.min(selectedOrderProduct?.stock || 20, orderQuantity + 1))}
                             className="p-2 text-slate-500 hover:text-slate-800 transition cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
@@ -963,8 +1000,11 @@ export default function ClientMobileView({
                       className="w-full mt-3 py-2.5 bg-frz-primary hover:bg-frz-primary-hover text-white font-extrabold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       <PlusCircle className="w-4 h-4" />
-                      Assinar e Confirmar Pedido
+                      Continuar para Assinar e Confirmar
                     </button>
+                    <p className="text-[9px] text-slate-500 text-center font-bold leading-snug">
+                      A assinatura digital confirma o recebimento e envia o pedido ao caixa em tempo real.
+                    </p>
                   </div>
                 </div>
               )}

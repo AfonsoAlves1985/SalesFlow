@@ -21,6 +21,8 @@ function isGeneratedModelComanda(c: any) {
 function sanitizeState(state: any) {
   return {
     ...state,
+    auditLogs: Array.isArray(state?.auditLogs) ? state.auditLogs.slice(0, 500) : [],
+    receivables: Array.isArray(state?.receivables) ? state.receivables : [],
     comandas: Array.isArray(state?.comandas)
       ? state.comandas.filter((c: any) => !isGeneratedModelComanda(c))
       : []
@@ -347,6 +349,32 @@ function mergeProductLists(incoming: any[], current: any[]) {
   return incoming.map(p => byId.get(p.id)).filter(Boolean);
 }
 
+function mergeAuditLogs(incoming: any[], current: any[]) {
+  const byId = new Map<string, any>();
+  [...incoming, ...current].forEach(log => log?.id && byId.set(log.id, log));
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+    .slice(0, 500);
+}
+
+function receivableTimestamp(r: any) {
+  return new Date(r?.updatedAt || r?.paidAt || r?.canceledAt || r?.createdAt || 0).getTime() || 0;
+}
+
+function mergeReceivables(incoming: any[], current: any[]) {
+  const byId = new Map<string, any>();
+  current.forEach(r => r?.id && byId.set(r.id, r));
+  incoming.forEach(r => {
+    if (!r?.id) return;
+    const currentItem = byId.get(r.id);
+    if (!currentItem || receivableTimestamp(r) >= receivableTimestamp(currentItem)) {
+      byId.set(r.id, r);
+    }
+  });
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+}
+
 // --- DB persistence ---
 function loadDb() {
     const defaults = {
@@ -354,6 +382,8 @@ function loadDb() {
     comandas: [],
     notifications: [],
     stockMovements: [],
+    auditLogs: [],
+    receivables: [],
     categories: ['Bebidas', 'Alimentos', 'Papelaria', 'Vestuário', 'Acessórios'],
     unidades: ['Sede Principal', 'Filial Norte', 'Filial Sul'],
     whatsStatus: 'disconnected',
@@ -397,6 +427,8 @@ function getStateMeta() {
     comandas: (db.comandas || []).map((c: any) => [c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
     notifications: (db.notifications || []).slice(0, 5).map((n: any) => [n.id, n.timestamp, n.status]),
     stockMovements: (db.stockMovements || []).slice(0, 5).map((m: any) => [m.id, m.timestamp]),
+    auditLogs: (db.auditLogs || []).slice(0, 5).map((a: any) => [a.id, a.timestamp, a.action, a.entityType]),
+    receivables: (db.receivables || []).map((r: any) => [r.id, r.status, r.amount, r.paidAmount, r.updatedAt]),
     categories: db.categories || [],
     unidades: db.unidades || [],
     whatsStatus: db.whatsStatus,
@@ -408,7 +440,9 @@ function getStateMeta() {
       products: db.products?.length || 0,
       comandas: db.comandas?.length || 0,
       notifications: db.notifications?.length || 0,
-      stockMovements: db.stockMovements?.length || 0
+      stockMovements: db.stockMovements?.length || 0,
+      auditLogs: db.auditLogs?.length || 0,
+      receivables: db.receivables?.length || 0
     }
   };
 }
@@ -479,6 +513,12 @@ app.post('/api/state/sync', async (req: any, res: any) => {
   if (Array.isArray(incomingState.comandas)) {
     incomingState.comandas = mergeComandaLists(incomingState.comandas, db.comandas || []);
   }
+  if (Array.isArray(incomingState.auditLogs)) {
+    incomingState.auditLogs = mergeAuditLogs(incomingState.auditLogs, db.auditLogs || []);
+  }
+  if (Array.isArray(incomingState.receivables)) {
+    incomingState.receivables = mergeReceivables(incomingState.receivables, db.receivables || []);
+  }
   Object.assign(db, incomingState);
   saveDb();
 
@@ -507,9 +547,26 @@ app.post('/api/state/sync', async (req: any, res: any) => {
       products: db.products?.length || 0,
       comandas: db.comandas?.length || 0,
       notifications: db.notifications?.length || 0,
-      stockMovements: db.stockMovements?.length || 0
+      stockMovements: db.stockMovements?.length || 0,
+      auditLogs: db.auditLogs?.length || 0,
+      receivables: db.receivables?.length || 0
     }
   });
+});
+
+app.post('/api/audit-logs', async (req: any, res: any) => {
+  if (!req.body?.id) return res.status(400).json({ error: 'Missing id' });
+  db.auditLogs = mergeAuditLogs([req.body], db.auditLogs || []);
+  saveDb();
+  await bumpRealtimeSignal();
+  res.json({ success: true, count: db.auditLogs.length });
+});
+
+app.post('/api/receivables/bulk', async (req: any, res: any) => {
+  if (Array.isArray(req.body)) db.receivables = mergeReceivables(req.body, db.receivables || []);
+  saveDb();
+  await bumpRealtimeSignal();
+  res.json({ success: true, count: db.receivables.length });
 });
 
 app.post('/api/products', async (req: any, res: any) => {
@@ -583,6 +640,7 @@ app.post('/api/reset', async (_req: any, res: any) => {
   db.comandas = [];
   db.notifications = [];
   db.stockMovements = [];
+  db.receivables = [];
   saveDb();
   if (supabase) {
     await Promise.all([

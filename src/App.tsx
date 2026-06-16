@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, UserSession, SystemUser, StockMovement } from './types';
+import { Product, Comanda, ClientType, ThemeType, OrderedItem, CashierShift, CashierCashMovement, UserSession, SystemUser, StockMovement, AuditLogEntry, AuditEntityType, Receivable } from './types';
 import { INITIAL_PRODUCTS, INITIAL_COMANDAS, MONTHS } from './initialData';
 import { 
   Plus, 
@@ -143,7 +143,7 @@ export default function App() {
   // Active states
   const [selectedComandaId, setSelectedComandaId] = useState<string | null>(null);
   const [clientActiveComandaId, setClientActiveComandaId] = useState<string | null>(initialComandaParam);
-  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'pdv'>('comandas');
+  const [activeAdminSubTab, setActiveAdminSubTab] = useState<'comandas' | 'estoque' | 'fluxo' | 'caixa_notificacoes' | 'acessos' | 'auditoria' | 'pdv'>('comandas');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // System Users List for Access Management
@@ -196,7 +196,12 @@ export default function App() {
   // Notification logs & Toast state (Configure um sistema de notificação automatizado)
   const [notifications, setNotifications] = useState<any[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [receivables, setReceivables] = useState<Receivable[]>([]);
   const [activeToasts, setActiveToasts] = useState<Array<{ id: string; title: string; description: string; type: 'email' | 'sms' }>>([]);
+  const [auditEntityFilter, setAuditEntityFilter] = useState<'all' | AuditEntityType>('all');
+  const [auditDateFilter, setAuditDateFilter] = useState('');
+  const [auditSearch, setAuditSearch] = useState('');
 
   // Modal creation state for Admin
   const [isNewComandaModalOpen, setIsNewComandaModalOpen] = useState(false);
@@ -230,12 +235,17 @@ export default function App() {
   const [openNotes, setOpenNotes] = useState('');
   const [closeActualCash, setCloseActualCash] = useState<number>(150);
   const [closeNotes, setCloseNotes] = useState('');
+  const [cashMovementType, setCashMovementType] = useState<'suprimento' | 'sangria'>('suprimento');
+  const [cashMovementAmount, setCashMovementAmount] = useState('');
+  const [cashMovementReason, setCashMovementReason] = useState('');
 
   // References to keep polling state comparison stable preventing keyboard layout/input refocus drops
   const productsRef = useRef<Product[]>(products);
   const comandasRef = useRef<Comanda[]>(comandas);
   const notificationsRef = useRef<any[]>(notifications);
   const stockMovementsRef = useRef<StockMovement[]>(stockMovements);
+  const auditLogsRef = useRef<AuditLogEntry[]>(auditLogs);
+  const receivablesRef = useRef<Receivable[]>(receivables);
   const categoriesRef = useRef<string[]>(categories);
   const unidadesRef = useRef<string[]>(unidades);
   const comandaSyncGuardRef = useRef(false);
@@ -249,9 +259,11 @@ export default function App() {
     comandasRef.current = comandas;
     notificationsRef.current = notifications;
     stockMovementsRef.current = stockMovements;
+    auditLogsRef.current = auditLogs;
+    receivablesRef.current = receivables;
     categoriesRef.current = categories;
     unidadesRef.current = unidades;
-  }, [products, comandas, notifications, stockMovements, categories, unidades]);
+  }, [products, comandas, notifications, stockMovements, auditLogs, receivables, categories, unidades]);
 
   useEffect(() => {
     if (!isInitialized || products.length === 0) return;
@@ -336,6 +348,100 @@ export default function App() {
     });
   };
 
+  const mergeAuditLogs = (incomingLogs: AuditLogEntry[], localLogs: AuditLogEntry[]) => {
+    const byId = new Map<string, AuditLogEntry>();
+    [...incomingLogs, ...localLogs].forEach(log => {
+      if (log?.id) byId.set(log.id, log);
+    });
+    return Array.from(byId.values())
+      .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+      .slice(0, 500);
+  };
+
+  const getComandaTotalValue = (comanda: Comanda) => {
+    return (comanda.items || []).reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+  };
+
+  const getReceivableStatus = (amount: number, paidAmount: number): Receivable['status'] => {
+    if (paidAmount <= 0) return 'Pendente';
+    if (paidAmount >= amount) return 'Pago';
+    return 'Parcial';
+  };
+
+  const mergeReceivables = (incomingReceivables: Receivable[], localReceivables: Receivable[]) => {
+    const byId = new Map<string, Receivable>();
+    localReceivables.forEach(receivable => {
+      if (receivable?.id) byId.set(receivable.id, receivable);
+    });
+    incomingReceivables.forEach(receivable => {
+      if (!receivable?.id) return;
+      const current = byId.get(receivable.id);
+      const incomingTs = new Date(receivable.updatedAt || receivable.paidAt || receivable.canceledAt || receivable.createdAt || 0).getTime();
+      const currentTs = current ? new Date(current.updatedAt || current.paidAt || current.canceledAt || current.createdAt || 0).getTime() : 0;
+      if (!current || incomingTs >= currentTs) byId.set(receivable.id, receivable);
+    });
+    return Array.from(byId.values())
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+  };
+
+  const syncReceivablesFromComandas = (updatedComandas: Comanda[], baseReceivables = receivablesRef.current) => {
+    const now = new Date().toISOString();
+    const comandaIds = new Set(updatedComandas.map(comanda => comanda.id));
+    const nextReceivables = [...baseReceivables];
+
+    updatedComandas.forEach(comanda => {
+      const amount = getComandaTotalValue(comanda);
+      const index = nextReceivables.findIndex(receivable => receivable.comandaId === comanda.id);
+      const existing = index >= 0 ? nextReceivables[index] : undefined;
+      if (amount <= 0 && !existing) return;
+
+      const isPaidComanda = comanda.status === 'Pago';
+      const paidAmount = existing?.status === 'Cancelado'
+        ? Number(existing.paidAmount || 0)
+        : isPaidComanda
+        ? amount
+        : Math.min(Number(existing?.paidAmount || 0), amount);
+      const status = existing?.status === 'Cancelado'
+        ? 'Cancelado'
+        : isPaidComanda
+        ? 'Pago'
+        : getReceivableStatus(amount, paidAmount);
+
+      const next: Receivable = {
+        id: existing?.id || `REC-${comanda.id}`,
+        comandaId: comanda.id,
+        clientName: comanda.clientName,
+        clientType: comanda.clientType,
+        courseOrTraining: comanda.courseOrTraining,
+        unit: comanda.unit,
+        month: comanda.month,
+        amount,
+        paidAmount,
+        status,
+        createdAt: existing?.createdAt || comanda.createdAt || now,
+        updatedAt: now,
+        paidAt: status === 'Pago' ? (existing?.paidAt || comanda.closedAt || now) : existing?.paidAt,
+        canceledAt: existing?.status === 'Cancelado' ? existing.canceledAt : undefined,
+        paymentMethod: existing?.paymentMethod,
+        notes: existing?.notes
+      };
+
+      if (existing) nextReceivables[index] = next;
+      else nextReceivables.unshift(next);
+    });
+
+    return nextReceivables.map(receivable => {
+      if (comandaIds.has(receivable.comandaId) || receivable.status === 'Cancelado') return receivable;
+      return {
+        ...receivable,
+        status: 'Cancelado' as const,
+        updatedAt: now,
+        canceledAt: receivable.canceledAt || now,
+        notes: receivable.notes || 'Comanda excluída/cancelada.'
+      };
+    });
+  };
+
   const applyRemoteState = (data: any) => {
     if (!data) return;
     if (data.__meta?.version) {
@@ -390,6 +496,18 @@ export default function App() {
         setNotifications(data.notifications);
         localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
       }
+
+      if (Array.isArray(data.auditLogs) && JSON.stringify(data.auditLogs) !== JSON.stringify(auditLogsRef.current)) {
+        const mergedAuditLogs = mergeAuditLogs(data.auditLogs, auditLogsRef.current);
+        setAuditLogs(mergedAuditLogs);
+        localStorage.setItem('salesflow_audit_logs', JSON.stringify(mergedAuditLogs));
+      }
+
+      if (Array.isArray(data.receivables) && JSON.stringify(data.receivables) !== JSON.stringify(receivablesRef.current)) {
+        const mergedReceivables = syncReceivablesFromComandas(comandasRef.current, mergeReceivables(data.receivables, receivablesRef.current));
+        setReceivables(mergedReceivables);
+        localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
+      }
     }
 
     if (data.whatsStatus) {
@@ -425,6 +543,8 @@ export default function App() {
     const cachedActiveShift = localStorage.getItem('salesflow_active_shift');
     const cachedShiftHistory = localStorage.getItem('salesflow_shift_history');
     const cachedNotifications = localStorage.getItem('salesflow_notifications');
+    const cachedAuditLogs = localStorage.getItem('salesflow_audit_logs');
+    const cachedReceivables = localStorage.getItem('salesflow_receivables');
     const cachedCategories = localStorage.getItem('salesflow_categories');
     const cachedUnidades = localStorage.getItem('salesflow_unidades');
 
@@ -503,6 +623,24 @@ export default function App() {
         }
       } catch (e) {}
     }
+    if (cachedAuditLogs) {
+      try {
+        const parsed = JSON.parse(cachedAuditLogs);
+        if (Array.isArray(parsed)) {
+          setAuditLogs(parsed.slice(0, 500));
+        }
+      } catch (e) {}
+    }
+    let loadedReceivables: Receivable[] = [];
+    if (cachedReceivables) {
+      try {
+        const parsed = JSON.parse(cachedReceivables);
+        if (Array.isArray(parsed)) {
+          loadedReceivables = parsed;
+          setReceivables(parsed);
+        }
+      } catch (e) {}
+    }
 
     // Connect to Express back-office initial database state
     fetch('/api/state?light=1')
@@ -575,6 +713,17 @@ export default function App() {
               if (Array.isArray(data.stockMovements)) {
                 setStockMovements(data.stockMovements);
               }
+              if (Array.isArray(data.auditLogs)) {
+                const mergedAuditLogs = mergeAuditLogs(data.auditLogs, auditLogsRef.current);
+                setAuditLogs(mergedAuditLogs);
+                localStorage.setItem('salesflow_audit_logs', JSON.stringify(mergedAuditLogs));
+              }
+              if (Array.isArray(data.receivables)) {
+                const mergedReceivables = syncReceivablesFromComandas(serverComandas, mergeReceivables(data.receivables, loadedReceivables));
+                setReceivables(mergedReceivables);
+                localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
+                loadedReceivables = mergedReceivables;
+              }
               needsSyncToServer = false;
             } else if (serverLooksStale) {
               needsSyncToServer = true;
@@ -612,7 +761,9 @@ export default function App() {
               comandas: loadedComandas, 
               categories: loadedCategories, 
               unidades: loadedUnidades,
-              notifications: data.notifications || []
+              notifications: data.notifications || [],
+              auditLogs: auditLogsRef.current,
+              receivables: loadedReceivables
             })
           }).catch(err => console.error("Restore push failed:", err));
         }
@@ -630,6 +781,26 @@ export default function App() {
             );
             setStockMovements(cleaned);
           }
+
+          if (data.auditLogs && Array.isArray(data.auditLogs)) {
+            const mergedAuditLogs = mergeAuditLogs(data.auditLogs, auditLogsRef.current);
+            setAuditLogs(mergedAuditLogs);
+            localStorage.setItem('salesflow_audit_logs', JSON.stringify(mergedAuditLogs));
+          }
+
+          if (data.receivables && Array.isArray(data.receivables)) {
+            const mergedReceivables = syncReceivablesFromComandas(loadedComandas, mergeReceivables(data.receivables, loadedReceivables));
+            setReceivables(mergedReceivables);
+            localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
+            loadedReceivables = mergedReceivables;
+          } else {
+            const syncedReceivables = syncReceivablesFromComandas(loadedComandas, loadedReceivables);
+            if (syncedReceivables.length > 0) {
+              setReceivables(syncedReceivables);
+              localStorage.setItem('salesflow_receivables', JSON.stringify(syncedReceivables));
+              loadedReceivables = syncedReceivables;
+            }
+          }
         }
 
         if (data.whatsStatus) {
@@ -640,6 +811,18 @@ export default function App() {
         if (data.whatsNumber) {
           setSystemWhatsNumber(data.whatsNumber);
           localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
+        }
+
+        const reconciledReceivables = syncReceivablesFromComandas(loadedComandas, loadedReceivables);
+        if (JSON.stringify(reconciledReceivables) !== JSON.stringify(loadedReceivables)) {
+          setReceivables(reconciledReceivables);
+          receivablesRef.current = reconciledReceivables;
+          localStorage.setItem('salesflow_receivables', JSON.stringify(reconciledReceivables));
+          fetch('/api/receivables/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reconciledReceivables)
+          }).catch(() => {});
         }
 
         if (comandaParam) {
@@ -750,6 +933,26 @@ export default function App() {
     }).catch(() => {});
   };
 
+  const saveReceivablesToStorage = (updatedReceivables: Receivable[]) => {
+    const cleanReceivables = updatedReceivables.map(receivable => ({
+      ...receivable,
+      amount: Number(receivable.amount || 0),
+      paidAmount: Number(receivable.paidAmount || 0)
+    }));
+    setReceivables(cleanReceivables);
+    receivablesRef.current = cleanReceivables;
+    const version = Date.now();
+    localStorage.setItem('salesflow_receivables', JSON.stringify(cleanReceivables));
+    localStorage.setItem('salesflow_comanda_version', version.toString());
+    comandaVersionRef.current = version;
+
+    fetch('/api/receivables/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanReceivables)
+    }).catch(() => {});
+  };
+
   const saveComandasToStorage = (updatedComandas: Comanda[]) => {
     const now = new Date().toISOString();
     const cleanComandas = sanitizeComandas(updatedComandas).map((comanda: Comanda) => {
@@ -759,6 +962,7 @@ export default function App() {
         : { ...comanda, updatedAt: now };
     }) as Comanda[];
     setComandas(cleanComandas);
+    saveReceivablesToStorage(syncReceivablesFromComandas(cleanComandas));
     const version = Date.now();
     localStorage.setItem('salesflow_tickets_v2', JSON.stringify(cleanComandas));
     localStorage.setItem('salesflow_comanda_version', version.toString());
@@ -777,6 +981,12 @@ export default function App() {
   };
 
   const handleSaveCategories = (updatedCategories: string[], updatedProducts?: Product[]) => {
+    const changedProducts = updatedProducts
+      ? updatedProducts.filter(product => {
+        const previous = productsRef.current.find(p => p.id === product.id);
+        return previous && previous.category !== product.category;
+      }).length
+      : 0;
     setCategories(updatedCategories);
     const version = Date.now();
     localStorage.setItem('salesflow_categories', JSON.stringify(updatedCategories));
@@ -805,14 +1015,29 @@ export default function App() {
         products: currentProds, 
         comandas: comandasRef.current, 
         notifications: notificationsRef.current, 
-        categories: updatedCategories 
+        categories: updatedCategories,
+        receivables: receivablesRef.current,
+        auditLogs: auditLogsRef.current
       })
     }).finally(() => {
       comandaSyncGuardRef.current = false;
     }).catch(() => {});
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'categoria',
+      entityLabel: 'Categorias de produtos',
+      summary: `Atualizou categorias (${updatedCategories.length})${changedProducts ? ` e recategorizou ${changedProducts} produto(s)` : ''}.`,
+      details: { totalCategorias: updatedCategories.length, produtosAlterados: changedProducts }
+    });
   };
 
   const handleSaveUnidades = (updatedUnidades: string[], updatedComandas?: Comanda[]) => {
+    const changedComandas = updatedComandas
+      ? updatedComandas.filter(comanda => {
+        const previous = comandasRef.current.find(c => c.id === comanda.id);
+        return previous && previous.unit !== comanda.unit;
+      }).length
+      : 0;
     setUnidades(updatedUnidades);
     const version = Date.now();
     localStorage.setItem('salesflow_unidades', JSON.stringify(updatedUnidades));
@@ -836,11 +1061,82 @@ export default function App() {
         comandas: currentComas, 
         notifications: notificationsRef.current, 
         categories: categoriesRef.current,
-        unidades: updatedUnidades
+        unidades: updatedUnidades,
+        receivables: receivablesRef.current,
+        auditLogs: auditLogsRef.current
       })
     }).finally(() => {
       comandaSyncGuardRef.current = false;
     }).catch(() => {});
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'unidade',
+      entityLabel: 'Unidades de atendimento',
+      summary: `Atualizou unidades (${updatedUnidades.length})${changedComandas ? ` e moveu ${changedComandas} comanda(s)` : ''}.`,
+      details: { totalUnidades: updatedUnidades.length, comandasAlteradas: changedComandas }
+    });
+  };
+
+  const recordAuditLog = (entry: Omit<AuditLogEntry, 'id' | 'timestamp' | 'actorId' | 'actorName' | 'actorLogin' | 'actorRole'>) => {
+    const actorName = session?.username || 'Sistema';
+    const auditEntry: AuditLogEntry = {
+      ...entry,
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      actorId: session?.id,
+      actorName,
+      actorLogin: session?.loginName,
+      actorRole: session?.role
+    };
+
+    setAuditLogs(prev => {
+      const updated = mergeAuditLogs([auditEntry], prev);
+      auditLogsRef.current = updated;
+      localStorage.setItem('salesflow_audit_logs', JSON.stringify(updated));
+      localStorage.setItem('salesflow_comanda_version', Date.now().toString());
+      fetch('/api/audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(auditEntry)
+      }).catch(() => {});
+      return updated;
+    });
+  };
+
+  const handleUpdateReceivable = (receivable: Receivable) => {
+    const now = new Date().toISOString();
+    const normalized: Receivable = {
+      ...receivable,
+      amount: Number(receivable.amount || 0),
+      paidAmount: receivable.status === 'Cancelado'
+        ? Math.min(Number(receivable.paidAmount || 0), Number(receivable.amount || 0))
+        : Math.min(Math.max(Number(receivable.paidAmount || 0), 0), Number(receivable.amount || 0)),
+      status: receivable.status === 'Cancelado'
+        ? 'Cancelado'
+        : getReceivableStatus(Number(receivable.amount || 0), Number(receivable.paidAmount || 0)),
+      updatedAt: now,
+      paidAt: receivable.status !== 'Cancelado' && Number(receivable.paidAmount || 0) >= Number(receivable.amount || 0)
+        ? (receivable.paidAt || now)
+        : receivable.paidAt,
+      canceledAt: receivable.status === 'Cancelado' ? (receivable.canceledAt || now) : undefined
+    };
+    saveReceivablesToStorage(mergeReceivables([normalized], receivablesRef.current));
+    recordAuditLog({
+      action: normalized.status === 'Cancelado' ? 'excluiu' : 'editou',
+      entityType: 'comanda',
+      entityId: normalized.comandaId,
+      entityLabel: normalized.clientName,
+      summary: `Atualizou recebível da comanda ${normalized.comandaId}: ${normalized.status} (${normalized.paidAmount.toFixed(2)} de ${normalized.amount.toFixed(2)}).`,
+      details: {
+        recebivel: normalized.id,
+        statusFinanceiro: normalized.status,
+        valorTotal: normalized.amount,
+        valorBaixado: normalized.paidAmount,
+        curso: normalized.courseOrTraining,
+        unidade: normalized.unit,
+        observacao: normalized.notes
+      }
+    });
   };
 
   // Persist user list changes securely in localStorage
@@ -964,9 +1260,9 @@ export default function App() {
   const handleSaveProduct = (updatedProduct: Product) => {
     const currentProducts = productsRef.current;
     const exists = currentProducts.some(p => p.id === updatedProduct.id);
+    const old = currentProducts.find(p => p.id === updatedProduct.id);
     let newProducts: Product[] = [];
     if (exists) {
-      const old = currentProducts.find(p => p.id === updatedProduct.id);
       newProducts = currentProducts.map(p => p.id === updatedProduct.id ? updatedProduct : p);
       if (old && old.stock !== updatedProduct.stock) {
         const diff = updatedProduct.stock - old.stock;
@@ -1002,11 +1298,37 @@ export default function App() {
       recordStockNotification('entrada', updatedProduct.name, updatedProduct.stock, 'Cadastro inicial');
     }
     saveProductsToStorage(newProducts);
+    recordAuditLog({
+      action: exists ? 'editou' : 'criou',
+      entityType: 'produto',
+      entityId: updatedProduct.id,
+      entityLabel: updatedProduct.name,
+      summary: exists ? `Editou produto ${updatedProduct.name}.` : `Cadastrou produto ${updatedProduct.name}.`,
+      details: {
+        codigo: updatedProduct.code,
+        categoria: updatedProduct.category,
+        estoqueAnterior: old?.stock,
+        estoqueNovo: updatedProduct.stock,
+        precoAnterior: old?.price,
+        precoNovo: updatedProduct.price
+      }
+    });
   };
 
   const handleDeleteProduct = (productId: string) => {
+    const product = productsRef.current.find(p => p.id === productId);
     const newProducts = productsRef.current.filter(p => p.id !== productId);
     saveProductsToStorage(newProducts);
+    if (product) {
+      recordAuditLog({
+        action: 'excluiu',
+        entityType: 'produto',
+        entityId: product.id,
+        entityLabel: product.name,
+        summary: `Excluiu produto ${product.name}.`,
+        details: { codigo: product.code, estoque: product.stock, preco: product.price }
+      });
+    }
   };
 
   // 2. Add product/item to comanda (reduces inventory stock!)
@@ -1065,6 +1387,14 @@ export default function App() {
     });
     recordStockNotification('saida', product.name, quantity, `Comanda ${comandaId}`);
     const addedComanda = updatedComandas.find(c => c.id === comandaId);
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'comanda',
+      entityId: comandaId,
+      entityLabel: addedComanda?.clientName || comandaId,
+      summary: `Adicionou ${quantity}x ${product.name} na comanda ${comandaId}.`,
+      details: { produto: product.name, codigo: product.code, quantidade: quantity, valorUnitario: product.price }
+    });
     if (addedComanda?.clientPhone) dispatchComandaUpdateWhatsApp(addedComanda, 'update');
   };
 
@@ -1112,6 +1442,14 @@ export default function App() {
     });
     recordStockNotification('entrada', targetItem.productName, targetItem.quantity, `Estorno Comanda ${comandaId}`);
     const removedFrom = updatedComandas.find(c => c.id === comandaId);
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'comanda',
+      entityId: comandaId,
+      entityLabel: removedFrom?.clientName || comandaId,
+      summary: `Removeu ${targetItem.quantity}x ${targetItem.productName} da comanda ${comandaId}.`,
+      details: { produto: targetItem.productName, codigo: targetItem.productCode, quantidade: targetItem.quantity, valorUnitario: targetItem.price }
+    });
     if (removedFrom?.clientPhone) dispatchComandaUpdateWhatsApp(removedFrom, 'update');
   };
 
@@ -1179,6 +1517,14 @@ export default function App() {
       recordStockNotification(movType, targetItem.productName, Math.abs(stockDifference), `Ajuste qnt Comanda ${comandaId}`);
     }
     const quantityUpdated = updatedComandas.find(c => c.id === comandaId);
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'comanda',
+      entityId: comandaId,
+      entityLabel: quantityUpdated?.clientName || comandaId,
+      summary: `Alterou quantidade de ${targetItem.productName} na comanda ${comandaId}: ${targetItem.quantity} -> ${newQuantity}.`,
+      details: { produto: targetItem.productName, quantidadeAnterior: targetItem.quantity, quantidadeNova: newQuantity }
+    });
     if (quantityUpdated?.clientPhone) dispatchComandaUpdateWhatsApp(quantityUpdated, 'update');
   };
 
@@ -1407,6 +1753,14 @@ export default function App() {
       }
       return u;
     }));
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'usuario',
+      entityId: userForPasswordChange.id,
+      entityLabel: userForPasswordChange.name,
+      summary: `Usuário ${userForPasswordChange.name} definiu senha definitiva no primeiro acesso.`,
+      details: { login: userForPasswordChange.username }
+    });
 
     // Log the user in
     const updatedUser = {
@@ -1521,10 +1875,19 @@ export default function App() {
     }));
     setSession(updatedSession);
     localStorage.setItem('salesflow_session', JSON.stringify(updatedSession));
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'usuario',
+      entityId: session.id,
+      entityLabel: cleanName,
+      summary: `Atualizou perfil do usuário ${cleanName}.`,
+      details: { email: cleanEmail }
+    });
     closeProfileModal();
   };
 
   const handleSaveUser = (user: SystemUser) => {
+    const existsBefore = users.some(u => u.id === user.id);
     setUsers(curr => {
       const exists = curr.some(u => u.id === user.id);
       if (exists) {
@@ -1532,6 +1895,14 @@ export default function App() {
       } else {
         return [...curr, user];
       }
+    });
+    recordAuditLog({
+      action: existsBefore ? 'editou' : 'criou',
+      entityType: 'usuario',
+      entityId: user.id,
+      entityLabel: user.name,
+      summary: existsBefore ? `Editou usuário ${user.name}.` : `Criou convite/usuário ${user.name}.`,
+      details: { login: user.username, email: user.email, perfil: user.role, status: user.status }
     });
 
     // Create a beautiful SMS/Email log for invitation
@@ -1575,6 +1946,17 @@ export default function App() {
       return;
     }
     setUsers(curr => curr.filter(u => u.id !== userId));
+    const deletedUser = users.find(u => u.id === userId);
+    if (deletedUser) {
+      recordAuditLog({
+        action: 'excluiu',
+        entityType: 'usuario',
+        entityId: deletedUser.id,
+        entityLabel: deletedUser.name,
+        summary: `Excluiu usuário ${deletedUser.name}.`,
+        details: { login: deletedUser.username, email: deletedUser.email, perfil: deletedUser.role }
+      });
+    }
     if (session?.id === userId) {
       handleLogout();
     }
@@ -1595,6 +1977,14 @@ export default function App() {
       }
       return u;
     }));
+    recordAuditLog({
+      action: 'ativou',
+      entityType: 'usuario',
+      entityId: id,
+      entityLabel: name,
+      summary: `Ativou convite do usuário ${name}.`,
+      details: { login: username }
+    });
 
     // Toast notifications for successful intake
     const toastId = `toast-activated-${Date.now()}`;
@@ -1630,6 +2020,7 @@ export default function App() {
       localStorage.removeItem('salesflow_client_active_id_v2');
       localStorage.removeItem('salesflow_active_shift');
       localStorage.removeItem('salesflow_shift_history');
+      localStorage.removeItem('salesflow_receivables');
       
       // Clear users cache too
       localStorage.removeItem('salesflow_users_v2');
@@ -1661,6 +2052,7 @@ export default function App() {
         setProducts([]);
         setComandas([]);
         setNotifications([]);
+        setReceivables([]);
         setActiveShift(null);
         setShiftHistory([]);
         setClientActiveComandaId(null);
@@ -1669,20 +2061,36 @@ export default function App() {
         setProducts([]);
         setComandas([]);
         setNotifications([]);
+        setReceivables([]);
         setActiveShift(null);
         setShiftHistory([]);
         setClientActiveComandaId(null);
         setSelectedComandaId(null);
       }
+      recordAuditLog({
+        action: 'resetou',
+        entityType: 'sistema',
+        entityLabel: 'Sistema',
+        summary: 'Executou reset geral de produtos, comandas, turnos e notificações.',
+        details: { produtos: productsRef.current.length, comandas: comandasRef.current.length }
+      });
       alert("Sucesso: Módulo zerado para uso imediato! Comece cadastrando um item de estoque no botão 'Estoque & Produtos'.");
     } catch (err) {
       setProducts([]);
       setComandas([]);
       setNotifications([]);
+      setReceivables([]);
       setActiveShift(null);
       setShiftHistory([]);
       setClientActiveComandaId(null);
       setSelectedComandaId(null);
+      recordAuditLog({
+        action: 'resetou',
+        entityType: 'sistema',
+        entityLabel: 'Sistema',
+        summary: 'Limpou cache local após falha/indisponibilidade do reset remoto.',
+        details: { produtos: productsRef.current.length, comandas: comandasRef.current.length }
+      });
       alert("Sucesso: Cache de dados limpo com sucesso!");
     }
   };
@@ -1700,6 +2108,14 @@ export default function App() {
     };
     setActiveShift(newShift);
     localStorage.setItem('salesflow_active_shift', JSON.stringify(newShift));
+    recordAuditLog({
+      action: 'abriu',
+      entityType: 'caixa',
+      entityId: newShift.id,
+      entityLabel: `Turno ${newShift.id}`,
+      summary: `Abriu turno de caixa com saldo inicial de R$ ${Number(newShift.initialBalance || 0).toFixed(2)}.`,
+      details: { saldoInicial: newShift.initialBalance, operador: newShift.openedBy }
+    });
     setIsShiftOpenModalOpen(false);
     setOpenNotes('');
   };
@@ -1709,7 +2125,8 @@ export default function App() {
     if (!activeShift) return;
 
     const shiftRevenue = getShiftRevenue(activeShift);
-    const expectedBalance = activeShift.initialBalance + shiftRevenue;
+    const cashAdjustment = getShiftCashAdjustment(activeShift);
+    const expectedBalance = getExpectedShiftBalance(activeShift);
 
     const closedShift: CashierShift = {
       ...activeShift,
@@ -1727,6 +2144,21 @@ export default function App() {
 
     setActiveShift(null);
     localStorage.removeItem('salesflow_active_shift');
+    recordAuditLog({
+      action: 'fechou',
+      entityType: 'caixa',
+      entityId: closedShift.id,
+      entityLabel: `Turno ${closedShift.id}`,
+      summary: `Fechou turno de caixa. Esperado R$ ${Number(expectedBalance || 0).toFixed(2)}, contado R$ ${Number(closeActualCash || 0).toFixed(2)}.`,
+      details: {
+        saldoInicial: closedShift.initialBalance,
+        faturamento: shiftRevenue,
+        ajustesCaixa: cashAdjustment,
+        esperado: expectedBalance,
+        contado: Number(closeActualCash),
+        divergencia: Number(closeActualCash) - expectedBalance
+      }
+    });
     setIsShiftCloseModalOpen(false);
     setCloseNotes('');
     setCloseActualCash(0);
@@ -1739,6 +2171,52 @@ export default function App() {
         const comandaValue = c.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
         return val + comandaValue;
       }, 0);
+  };
+
+  const getShiftCashAdjustment = (shift: CashierShift) => {
+    return (shift.cashMovements || []).reduce((sum, movement) => {
+      const amount = Number(movement.amount || 0);
+      return movement.type === 'suprimento' ? sum + amount : sum - amount;
+    }, 0);
+  };
+
+  const getExpectedShiftBalance = (shift: CashierShift) => {
+    return Number(shift.initialBalance || 0) + Number(getShiftRevenue(shift) || 0) + Number(getShiftCashAdjustment(shift) || 0);
+  };
+
+  const handleRegisterCashMovement = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeShift) return;
+    const amount = Number(cashMovementAmount.replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Informe um valor válido para a movimentação de caixa.');
+      return;
+    }
+
+    const movement: CashierCashMovement = {
+      id: `CSH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type: cashMovementType,
+      amount,
+      reason: cashMovementReason.trim() || (cashMovementType === 'suprimento' ? 'Suprimento de caixa' : 'Sangria de caixa'),
+      createdAt: new Date().toISOString(),
+      createdBy: session?.username || 'Usuário'
+    };
+    const updatedShift = {
+      ...activeShift,
+      cashMovements: [movement, ...(activeShift.cashMovements || [])]
+    };
+    setActiveShift(updatedShift);
+    localStorage.setItem('salesflow_active_shift', JSON.stringify(updatedShift));
+    setCashMovementAmount('');
+    setCashMovementReason('');
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'caixa',
+      entityId: activeShift.id,
+      entityLabel: `Turno ${activeShift.id}`,
+      summary: `${cashMovementType === 'suprimento' ? 'Registrou suprimento' : 'Registrou sangria'} de caixa no valor de R$ ${amount.toFixed(2)}.`,
+      details: { tipo: cashMovementType, valor: amount, motivo: movement.reason, operador: movement.createdBy }
+    });
   };
 
   const recordStockMovement = (movement: StockMovement) => {
@@ -1795,6 +2273,15 @@ export default function App() {
     });
     saveComandasToStorage(updatedComandas);
     if (closedComanda) {
+      const total = closedComanda.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+      recordAuditLog({
+        action: 'fechou',
+        entityType: 'comanda',
+        entityId: closedComanda.id,
+        entityLabel: closedComanda.clientName,
+        summary: `Fechou comanda ${closedComanda.id} de ${closedComanda.clientName} no valor de R$ ${total.toFixed(2)}.`,
+        details: { total, itens: closedComanda.items.length, curso: closedComanda.courseOrTraining, unidade: closedComanda.unit }
+      });
       triggerNotification(closedComanda, 'Pago');
       if (closedComanda.clientPhone) dispatchComandaUpdateWhatsApp(closedComanda, 'close');
     }
@@ -1810,6 +2297,14 @@ export default function App() {
       return c;
     });
     saveComandasToStorage(updatedComandas);
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'comanda',
+      entityId: comandaId,
+      entityLabel: target?.clientName || comandaId,
+      summary: `${wasActive ? 'Desativou' : 'Ativou'} lembrete de fechamento da comanda ${comandaId}.`,
+      details: { lembreteAtivo: !wasActive }
+    });
     if (!wasActive && target?.clientPhone) {
       dispatchComandaUpdateWhatsApp(target, 'reminder');
     }
@@ -1852,6 +2347,14 @@ export default function App() {
 
     const updatedComandas = comandas.filter(c => c.id !== comandaId);
     saveComandasToStorage(updatedComandas);
+    recordAuditLog({
+      action: 'excluiu',
+      entityType: 'comanda',
+      entityId: targetComanda.id,
+      entityLabel: targetComanda.clientName,
+      summary: `Excluiu comanda ${targetComanda.id} de ${targetComanda.clientName}.`,
+      details: { status: targetComanda.status, itens: targetComanda.items.length, curso: targetComanda.courseOrTraining, unidade: targetComanda.unit }
+    });
 
     if (selectedComandaId === comandaId) {
       setSelectedComandaId(null);
@@ -1878,6 +2381,14 @@ export default function App() {
     const safeComandas = Array.isArray(comandas) ? comandas : [];
     const updatedComandas = [newComanda, ...safeComandas];
     saveComandasToStorage(updatedComandas);
+    recordAuditLog({
+      action: 'criou',
+      entityType: 'comanda',
+      entityId: newComanda.id,
+      entityLabel: newComanda.clientName,
+      summary: `Criou comanda ${newComanda.id} para ${newComanda.clientName}.`,
+      details: { tipo: newComanda.clientType, curso: newComanda.courseOrTraining, mes: newComanda.month, unidade: newComanda.unit }
+    });
 
     // Store visitor's pointer session
     setClientActiveComandaId(generatedId);
@@ -1916,6 +2427,16 @@ export default function App() {
       return c;
     });
     saveComandasToStorage(updatedComandas);
+    const signedComanda = updatedComandas.find(c => c.id === comandaId);
+    const signedItem = signedComanda?.items.find(item => item.id === itemId);
+    recordAuditLog({
+      action: 'assinou',
+      entityType: 'comanda',
+      entityId: comandaId,
+      entityLabel: signedComanda?.clientName || comandaId,
+      summary: `Registrou assinatura de recebimento em ${signedItem?.productName || 'item'} na comanda ${comandaId}.`,
+      details: { item: signedItem?.productName, itemId }
+    });
     
     // Auto-trigger notification for signed status update "Pedido Assinado / Pronto"
     const currentTicket = comandas.find(c => c.id === comandaId);
@@ -1934,6 +2455,13 @@ export default function App() {
   const handleUpdateOperatingUnit = (unit: string) => {
     setOperatingUnit(unit);
     localStorage.setItem('salesflow_operating_unit', unit);
+    recordAuditLog({
+      action: 'editou',
+      entityType: 'unidade',
+      entityLabel: unit,
+      summary: `Alterou unidade operacional do caixa para ${unit}.`,
+      details: { unidade: unit }
+    });
     
     // Automatically preset the creation unit to sync with operational unit
     setNewClientUnit(unit);
@@ -2028,6 +2556,26 @@ export default function App() {
 
   const themeStyle = getThemeClasses();
   const visibleNotifications = notifications.filter(notif => notif?.type !== 'WhatsApp');
+  const auditEntityLabels: Record<AuditEntityType, string> = {
+    comanda: 'Comanda',
+    produto: 'Produto',
+    estoque: 'Estoque',
+    caixa: 'Caixa',
+    usuario: 'Usuário',
+    unidade: 'Unidade',
+    categoria: 'Categoria',
+    pdv: 'PDV',
+    sistema: 'Sistema'
+  };
+  const filteredAuditLogs = auditLogs.filter(log => {
+    if (auditEntityFilter !== 'all' && log.entityType !== auditEntityFilter) return false;
+    if (auditDateFilter && !String(log.timestamp || '').startsWith(auditDateFilter)) return false;
+    const query = auditSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [log.actorName, log.actorLogin, log.entityLabel, log.entityId, log.summary, log.action, log.entityType]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(query));
+  });
 
   // Render Activation Invitation Screen if code is active
   if (activeInviteCode) {
@@ -2290,7 +2838,7 @@ export default function App() {
                         </span>
                         <button
                           onClick={() => {
-                            setCloseActualCash(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0));
+                            setCloseActualCash(getExpectedShiftBalance(activeShift));
                             setIsShiftCloseModalOpen(true);
                           }}
                           className="bg-frz-primary hover:bg-frz-primary-hover text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition shrink-0 cursor-pointer shadow-sm"
@@ -2507,6 +3055,28 @@ export default function App() {
                               </span>
                             )}
                           </button>
+                          <button
+                            onClick={() => {
+                              setActiveAdminSubTab('auditoria');
+                              if (sidebarCollapsed) setSidebarCollapsed(false);
+                            }}
+                            className={`w-full flex items-center gap-3 py-2.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                              activeAdminSubTab === 'auditoria'
+                                ? 'bg-frz-primary/15 text-white'
+                                : 'text-slate-100 hover:bg-white/5 hover:text-white'
+                            }`}
+                            title={sidebarCollapsed ? 'Auditoria' : undefined}
+                          >
+                            <span className={`${sidebarCollapsed ? 'mx-auto' : ''} w-8 h-8 rounded-full bg-frz-primary/15 text-frz-primary flex items-center justify-center shrink-0`}>
+                              <History className="w-4 h-4" />
+                            </span>
+                            {!sidebarCollapsed && (
+                              <span className="text-left min-w-0">
+                                <span className="block truncate">Auditoria</span>
+                                <span className="block text-[9px] text-slate-400 font-semibold">{auditLogs.length} registros</span>
+                              </span>
+                            )}
+                          </button>
                         </div>
                       )}
                     </nav>
@@ -2557,7 +3127,7 @@ export default function App() {
                   <div className="flex-1 min-w-0">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
-                {!activeShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'pdv' && (
+                {!activeShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && (
                   <div className="bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 p-4 rounded-2xl text-xs flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
                     <div className="flex gap-2 items-start">
                       <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
@@ -2584,6 +3154,18 @@ export default function App() {
                     setProducts={setProducts}
                     stockMovements={stockMovements}
                     onStockNotification={recordStockNotification}
+                    onAudit={(event) => {
+                      recordAuditLog({
+                        action: event.action,
+                        entityType: 'pdv',
+                        entityId: event.saleNumber,
+                        entityLabel: `Venda PDV ${event.saleNumber}`,
+                        summary: event.action === 'criou'
+                          ? `Finalizou venda PDV ${event.saleNumber} para ${event.customerName} no valor de R$ ${event.total.toFixed(2)}.`
+                          : `Estornou venda PDV ${event.saleNumber} no valor de R$ ${event.total.toFixed(2)}.`,
+                        details: { cliente: event.customerName, total: event.total, itens: event.itemCount }
+                      });
+                    }}
                     verifyRefundLogin={(login, password) => {
                       const user = users.find(u =>
                         u.username.toLowerCase() === login.toLowerCase() &&
@@ -2606,6 +3188,8 @@ export default function App() {
                   <FluxoDashboard
                     products={products}
                     comandas={comandas}
+                    receivables={receivables}
+                    onUpdateReceivable={handleUpdateReceivable}
                     stockMovements={stockMovements}
                     setStockMovements={setStockMovements}
                     activeShift={activeShift}
@@ -2625,17 +3209,122 @@ export default function App() {
                       const emptyComandas: Comanda[] = [];
                       const emptyNotifications: any[] = [];
                       const emptyStockMovements: StockMovement[] = [];
+                      const emptyReceivables: Receivable[] = [];
                       saveProductsToStorage(emptyProducts);
                       saveComandasToStorage(emptyComandas);
                       setNotifications(emptyNotifications);
                       setStockMovements(emptyStockMovements);
+                      setReceivables(emptyReceivables);
                       localStorage.setItem('salesflow_products', JSON.stringify(emptyProducts));
                       localStorage.setItem('salesflow_comandas', JSON.stringify(emptyComandas));
                       localStorage.setItem('salesflow_notifications', JSON.stringify(emptyNotifications));
                       localStorage.setItem('salesflow_stockMovements', JSON.stringify(emptyStockMovements));
+                      localStorage.setItem('salesflow_receivables', JSON.stringify(emptyReceivables));
+                      recordAuditLog({
+                        action: 'resetou',
+                        entityType: 'sistema',
+                        entityLabel: 'Sistema',
+                        summary: 'Executou reset pela tela de controle de acessos.',
+                        details: { origem: 'controle_acessos' }
+                      });
                       alert('Sistema zerado com sucesso! Produtos, comandas, estoque e notificações foram removidos.');
                     }}
                   />
+                ) : activeAdminSubTab === 'auditoria' ? (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+                      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                        <div>
+                          <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Auditoria Operacional</span>
+                          <h3 className="text-lg font-black text-slate-900 mt-1">Histórico de Ações Críticas</h3>
+                          <p className="text-xs text-slate-500 mt-1">Registro local de alterações em comandas, estoque, caixa, usuários e sistema.</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
+                          <div>
+                            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1">Tipo</label>
+                            <select
+                              value={auditEntityFilter}
+                              onChange={(e) => setAuditEntityFilter(e.target.value as 'all' | AuditEntityType)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-frz-primary/20"
+                            >
+                              <option value="all">Todos</option>
+                              {Object.entries(auditEntityLabels).map(([key, label]) => (
+                                <option key={key} value={key}>{label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1">Data</label>
+                            <input
+                              type="date"
+                              value={auditDateFilter}
+                              onChange={(e) => setAuditDateFilter(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-frz-primary/20"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1">Busca</label>
+                            <input
+                              type="text"
+                              value={auditSearch}
+                              onChange={(e) => setAuditSearch(e.target.value)}
+                              placeholder="Usuário, item, ação..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-frz-primary/20"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                        <span className="text-xs font-black text-slate-800">{filteredAuditLogs.length} registro(s)</span>
+                        {(auditEntityFilter !== 'all' || auditDateFilter || auditSearch) && (
+                          <button
+                            onClick={() => {
+                              setAuditEntityFilter('all');
+                              setAuditDateFilter('');
+                              setAuditSearch('');
+                            }}
+                            className="text-[10px] font-black text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition cursor-pointer"
+                          >
+                            Limpar filtros
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-[560px] overflow-y-auto divide-y divide-slate-100">
+                        {filteredAuditLogs.length === 0 ? (
+                          <div className="text-center py-12 text-slate-500">
+                            <History className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                            <p className="text-sm font-black text-slate-700">Nenhum registro de auditoria encontrado.</p>
+                            <p className="text-xs mt-1">As próximas ações críticas aparecerão aqui automaticamente.</p>
+                          </div>
+                        ) : (
+                          filteredAuditLogs.map(log => (
+                            <div key={log.id} className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-3 hover:bg-slate-50/80 transition">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white px-2 py-0.5 rounded-full">{auditEntityLabels[log.entityType]}</span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-frz-primary/10 text-frz-primary px-2 py-0.5 rounded-full">{log.action}</span>
+                                  {log.entityId && <span className="text-[10px] font-mono font-bold text-slate-500">{log.entityId}</span>}
+                                </div>
+                                <p className="text-sm font-extrabold text-slate-900 mt-2">{log.summary}</p>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 font-bold">
+                                  <span>Usuário: {log.actorName}{log.actorLogin ? ` (@${log.actorLogin})` : ''}</span>
+                                  <span>Alvo: {log.entityLabel}</span>
+                                  {log.actorRole && <span>Perfil: {log.actorRole}</span>}
+                                </div>
+                              </div>
+                              <div className="md:text-right shrink-0">
+                                <span className="text-[10px] font-black text-slate-700 block">{new Date(log.timestamp || Date.now()).toLocaleDateString('pt-BR')}</span>
+                                <span className="text-[10px] font-mono text-slate-500 block mt-0.5">{new Date(log.timestamp || Date.now()).toLocaleTimeString('pt-BR')}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : activeAdminSubTab === 'caixa_notificacoes' ? (
                   /* GORGEOUS COMMERCIAL REPORTING / SYSTEM PANEL */
                   <div className="space-y-6 animate-fadeIn">
@@ -2654,7 +3343,7 @@ export default function App() {
                                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full">ABERTO</span>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                                 <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Abertura</span>
                                   <span className="text-xs font-black text-slate-700">R$ {Number(activeShift.initialBalance || 0).toFixed(2)}</span>
@@ -2663,17 +3352,74 @@ export default function App() {
                                   <span className="text-[9px] text-slate-400 block font-semibold">Vendas Caixa</span>
                                   <span className="text-xs font-black text-emerald-600 font-mono">+R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
                                 </div>
+                                <div className="bg-slate-50/50 p-2 text-center rounded-xl border border-slate-100">
+                                  <span className="text-[9px] text-slate-400 block font-semibold">Ajustes</span>
+                                  <span className={`text-xs font-black font-mono ${getShiftCashAdjustment(activeShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                    {getShiftCashAdjustment(activeShift) >= 0 ? '+' : ''}R$ {getShiftCashAdjustment(activeShift).toFixed(2)}
+                                  </span>
+                                </div>
                                 <div className="bg-frz-primary/10 p-2 text-center rounded-xl border border-slate-100">
                                   <span className="text-[9px] text-slate-400 block font-semibold">Estimado</span>
-                                  <span className="text-xs font-black text-frz-primary font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
+                                  <span className="text-xs font-black text-frz-primary font-mono">R$ {getExpectedShiftBalance(activeShift).toFixed(2)}</span>
                                 </div>
                               </div>
-                              
+
+                              <form onSubmit={handleRegisterCashMovement} className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Sangria / Suprimento</span>
+                                  <span className="text-[9px] font-bold text-slate-400">{activeShift.cashMovements?.length || 0} movimento(s)</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-[130px_110px_1fr_auto] gap-2">
+                                  <select
+                                    value={cashMovementType}
+                                    onChange={(e) => setCashMovementType(e.target.value as 'suprimento' | 'sangria')}
+                                    className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black text-slate-700 focus:outline-none focus:border-frz-primary"
+                                  >
+                                    <option value="suprimento">Suprimento (+)</option>
+                                    <option value="sangria">Sangria (-)</option>
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={cashMovementAmount}
+                                    onChange={(e) => setCashMovementAmount(e.target.value)}
+                                    placeholder="Valor"
+                                    className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-frz-primary"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={cashMovementReason}
+                                    onChange={(e) => setCashMovementReason(e.target.value)}
+                                    placeholder="Motivo/observação"
+                                    className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-frz-primary"
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black rounded-lg transition cursor-pointer"
+                                  >
+                                    Registrar
+                                  </button>
+                                </div>
+                                {(activeShift.cashMovements || []).length > 0 && (
+                                  <div className="space-y-1 max-h-20 overflow-y-auto pr-1">
+                                    {(activeShift.cashMovements || []).slice(0, 4).map(movement => (
+                                      <div key={movement.id} className="flex items-center justify-between gap-2 text-[10px] bg-white border border-slate-100 rounded-lg px-2.5 py-1.5">
+                                        <span className="font-bold text-slate-600 truncate">{movement.reason}</span>
+                                        <span className={`font-black font-mono ${movement.type === 'suprimento' ? 'text-blue-600' : 'text-rose-600'}`}>
+                                          {movement.type === 'suprimento' ? '+' : '-'}R$ {Number(movement.amount || 0).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </form>
+
                               <p className="text-[10px] text-slate-400">Iniciado em: <strong className="text-slate-600 font-semibold">{new Date(activeShift.openedAt || Date.now()).toLocaleString('pt-BR')}</strong></p>
 
                               <button
                                 onClick={() => {
-                                  setCloseActualCash(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0));
+                                  setCloseActualCash(getExpectedShiftBalance(activeShift));
                                   setIsShiftCloseModalOpen(true);
                                 }}
                                 className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
@@ -2714,7 +3460,7 @@ export default function App() {
                               <p className="text-[11px] text-slate-400 text-center py-8">Nenhum histórico de caixa fechado registrado.</p>
                             ) : (
                               shiftHistory.map((shf) => {
-                                const devRevenue = shf.finalBalance ? (shf.finalBalance - shf.initialBalance) : 0;
+                                const devRevenue = shf.finalBalance ? (shf.finalBalance - shf.initialBalance - getShiftCashAdjustment(shf)) : 0;
                                 const diff = shf.actualCashInHand !== undefined && shf.finalBalance !== undefined 
                                   ? shf.actualCashInHand - shf.finalBalance
                                   : 0;
@@ -2725,6 +3471,9 @@ export default function App() {
                                       <div className="font-extrabold text-slate-800 font-mono text-[11px]">{shf.id}</div>
                                       <span className="text-[9px] text-slate-400 block mt-0.5">Operado por {shf.closedBy}</span>
                                       <span className="text-[9px] text-slate-400 block mt-0.5">{new Date(shf.openedAt || Date.now()).toLocaleDateString('pt-BR')} {new Date(shf.openedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                      {(shf.cashMovements || []).length > 0 && (
+                                        <span className="text-[9px] text-blue-600 block mt-0.5 font-bold">Ajustes: {shf.cashMovements?.length} mov. ({getShiftCashAdjustment(shf) >= 0 ? '+' : ''}R$ {getShiftCashAdjustment(shf).toFixed(2)})</span>
+                                      )}
                                     </div>
                                     <div className="text-right">
                                       <span className="font-bold text-slate-800 block">Faturado: R$ {Number(devRevenue || 0).toFixed(2)}</span>
@@ -3252,10 +4001,16 @@ export default function App() {
                   <span className="text-slate-500">Vendas do Turno (+):</span>
                   <span className="font-bold text-emerald-600 font-mono">+ R$ {Number(getShiftRevenue(activeShift) || 0).toFixed(2)}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Sangria/Suprimento:</span>
+                  <span className={`font-bold font-mono ${getShiftCashAdjustment(activeShift) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                    {getShiftCashAdjustment(activeShift) >= 0 ? '+' : '-'} R$ {Math.abs(getShiftCashAdjustment(activeShift)).toFixed(2)}
+                  </span>
+                </div>
                 <hr className="border-slate-200 border-dashed my-1" />
                 <div className="flex justify-between font-extrabold text-slate-900">
                   <span>Valor Calculado Estimado:</span>
-                  <span className="text-frz-primary font-mono">R$ {(Number(activeShift.initialBalance || 0) + Number(getShiftRevenue(activeShift) || 0)).toFixed(2)}</span>
+                  <span className="text-frz-primary font-mono">R$ {getExpectedShiftBalance(activeShift).toFixed(2)}</span>
                 </div>
               </div>
 
