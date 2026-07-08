@@ -119,9 +119,10 @@ export default function App() {
       case 'infinite':
       default:
         return (
-          <div className="relative w-10 h-10 flex items-center justify-center bg-[#09090B] border border-slate-700 rounded-xl overflow-hidden shadow-inner transition-all duration-300 transform hover:rotate-6 active:scale-95">
-            <div className="absolute -bottom-1 -left-1 w-8 h-8 bg-indigo-600/20 rounded-full blur-xs" />
-            <TrendingUp className="w-5 h-5 text-indigo-400" />
+          <div className="relative w-10 h-10 flex items-center justify-center bg-[#152332] border border-[#333F55] rounded-xl overflow-hidden shadow-inner transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-lg active:scale-95">
+            <div className="absolute -bottom-2 -left-2 w-9 h-9 bg-[#1B84FF]/35 rounded-full blur-sm" />
+            <div className="absolute -top-2 -right-2 w-9 h-9 bg-[#43CED7]/30 rounded-full blur-sm" />
+            <TrendingUp className="relative w-5 h-5 text-[#43CED7]" />
           </div>
         );
     }
@@ -2889,7 +2890,7 @@ export default function App() {
     switch (theme) {
       case 'gold-dark':
         return {
-          bg: 'theme-frz-dark bg-[#09090B]',
+          bg: 'theme-frz-dark bg-frz-canvas',
           headerBg: 'bg-[#121214] border-white/5',
           textColor: 'text-slate-200',
           brandColor: 'bg-frz-primary hover:bg-frz-primary-hover text-white',
@@ -2969,7 +2970,7 @@ export default function App() {
 
   if (isClientOnlyMode) {
     return (
-      <div id="app-root" className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-0 md:p-4 select-none">
+      <div id="app-root" className="sf-material-pro min-h-screen bg-slate-950 flex flex-col items-center justify-center p-0 md:p-4 select-none">
         
         {/* SalesFlow Live Automatic Email/SMS Toast Despatches */}
         <div className="fixed bottom-3 left-3 right-3 sm:left-auto sm:bottom-4 sm:right-4 z-50 flex flex-col gap-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
@@ -3007,7 +3008,7 @@ export default function App() {
   }
 
   return (
-    <div id="app-root" className={`min-h-screen flex flex-col font-sans transition-colors duration-500 ${themeStyle.bg}`}>
+    <div id="app-root" className={`sf-material-pro min-h-screen flex flex-col font-sans transition-colors duration-500 ${themeStyle.bg}`}>
       
       {/* SalesFlow Live Automatic Email/SMS Toast Despatches */}
       <div className="fixed bottom-3 left-3 right-3 sm:left-auto sm:bottom-4 sm:right-4 z-50 flex flex-col gap-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
@@ -3029,7 +3030,7 @@ export default function App() {
       </div>
 
       {/* 2. DYNAMIC LAYOUT AREA */}
-      <main className="flex-1 max-w-full w-full mx-auto p-2 sm:p-3 lg:p-4 grid grid-cols-1 2xl:grid-cols-12 gap-3 lg:gap-4 items-stretch">
+      <main className="sf-material-shell flex-1 max-w-full w-full mx-auto grid grid-cols-1 2xl:grid-cols-12 gap-3 lg:gap-4 items-stretch">
         
         {/* LEFT COLUMN: ESTAÇÃO PRINCIPAL / ADMIN POS (Renders if mode is BOTH or ADMIN) */}
         {(viewMode === 'both' || viewMode === 'admin') && (
@@ -3038,7 +3039,7 @@ export default function App() {
             {session === null ? (
               userForPasswordChange ? (
                 /* PASSWORD RESET ON FIRST LOGIN OVERLAY/FORM */
-                <div id="first-access-password-change" className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full mx-auto my-12 shadow-2xl space-y-6 animate-slideIn text-left">
+                <div id="first-access-password-change" className="sf-auth-card bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full mx-auto my-12 shadow-2xl space-y-6 animate-slideIn text-left">
                   <div className="text-center">
                     <div className="relative w-14 h-14 bg-frz-primary/10 border border-frz-primary/20 text-frz-primary rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
                       <Key className="w-7 h-7 text-frz-primary" />
@@ -3107,7 +3108,7 @@ export default function App() {
                 </div>
               ) : (
                 /* GATED LOGIN SCREEN for administrative/cashier operations */
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full mx-auto my-12 shadow-2xl space-y-6">
+                <div className="sf-auth-card bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-md w-full mx-auto my-12 shadow-2xl space-y-6">
                 <div className="text-center">
                   <div className="flex justify-center mb-4 transform scale-110 drop-shadow-md">
                     {renderBrandLogo(brandLogoOption)}
@@ -3169,7 +3170,7 @@ export default function App() {
               /* ACTIVE POS WORKSPACE */
               <>
                 {/* Active Session strip - displaying roles, cashier status, shift triggers */}
-                <div className="bg-slate-800/45 p-3 rounded-2xl border border-slate-700/30 flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3">
+                <div className="sf-material-topbar bg-slate-800/45 p-3 rounded-2xl border border-slate-700/30 flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-slate-700 flex items-center justify-center text-slate-300">
                       <Users className="w-4 h-4" />
@@ -3321,7 +3322,7 @@ export default function App() {
                 {/* Sidebar + Content Layout */}
                 <div className="flex flex-col xl:flex-row gap-3 items-stretch min-w-0">
                   {/* Sidebar */}
-                  <aside className={`bg-[#111827] border border-slate-800/80 rounded-2xl shadow-frz-card shrink-0 overflow-hidden text-white flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] transition-all duration-300 ${sidebarCollapsed ? 'w-full xl:w-[68px]' : 'w-full xl:w-[232px]'}`}>
+                  <aside className={`sf-material-sidebar bg-[#111827] border border-slate-800/80 rounded-2xl shadow-frz-card shrink-0 overflow-hidden text-white flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] transition-all duration-300 ${sidebarCollapsed ? 'w-full xl:w-[68px]' : 'w-full xl:w-[232px]'}`}>
                     {/* Header - click to toggle collapse */}
                     <button
                       onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -3593,7 +3594,7 @@ export default function App() {
                   </aside>
 
                   {/* Content area */}
-                  <div className="flex-1 min-w-0 space-y-3 lg:space-y-4">
+                  <div className="sf-material-content flex-1 min-w-0 space-y-3 lg:space-y-4">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
                 {!scopedActiveShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && activeAdminSubTab !== 'frentes' && (
