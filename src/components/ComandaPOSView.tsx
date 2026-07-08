@@ -50,11 +50,11 @@ export default function ComandaPOSView({
   const total = comanda.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
   return (
-    <div className="flex flex-col xl:flex-row gap-4 h-full animate-fadeIn">
+    <div className="flex flex-col 2xl:flex-row gap-4 h-full animate-fadeIn min-w-0">
       {/* Left Panel - Products */}
       <div className="flex-1 min-w-0 flex flex-col bg-white rounded-2xl border border-slate-100 shadow-frz-card overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+        <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
           {onBackToList && (
             <button onClick={onBackToList} className="p-1.5 hover:bg-slate-100 rounded-lg transition cursor-pointer">
               <ChevronLeft className="w-5 h-5 text-slate-500" />
@@ -76,7 +76,7 @@ export default function ComandaPOSView({
         </div>
 
         {/* Categories */}
-        <div className="px-4 py-3 border-b border-slate-100 overflow-x-auto flex gap-1.5">
+        <div className="px-4 py-3 border-b border-slate-100 sf-table-scroll flex gap-1.5">
           <button
             onClick={() => setActiveCategory(null)}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition cursor-pointer ${
@@ -106,7 +106,7 @@ export default function ComandaPOSView({
               <p className="text-xs font-bold">Nenhum produto disponível</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
               {filteredProducts.map(p => {
                 const qty = getQty(p.id);
                 return (
@@ -177,7 +177,7 @@ export default function ComandaPOSView({
       </div>
 
       {/* Right Panel - Cart */}
-      <div className="w-full xl:w-[340px] shrink-0 flex flex-col bg-white rounded-2xl border border-slate-100 shadow-frz-card overflow-hidden">
+      <div className="w-full 2xl:w-[340px] shrink-0 flex flex-col bg-white rounded-2xl border border-slate-100 shadow-frz-card overflow-hidden">
         {/* Comanda Header */}
         <div className="p-4 border-b border-slate-100">
           <div className="flex items-center justify-between mb-1">

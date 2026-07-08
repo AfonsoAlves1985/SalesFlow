@@ -111,7 +111,7 @@ export default function UnitManagementModal({
       <div 
         id="unit-mgmt-card" 
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl border border-slate-150 shadow-xl max-w-md w-full overflow-hidden flex flex-col cursor-default"
+        className="bg-white rounded-2xl border border-slate-150 shadow-xl max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col cursor-default"
       >
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2">
@@ -127,9 +127,9 @@ export default function UnitManagementModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
           {/* Form to add secondary unit */}
-          <form id="unit-add-form" onSubmit={handleAddUnit} className="flex gap-2">
+          <form id="unit-add-form" onSubmit={handleAddUnit} className="flex flex-col sm:flex-row gap-2">
             <input
               id="new-unit-input"
               type="text"
@@ -163,7 +163,7 @@ export default function UnitManagementModal({
                 return (
                   <div key={unit} className="p-3 flex items-center justify-between text-xs gap-3">
                     {isEditing ? (
-                      <div className="flex-1 flex gap-1.5 items-center">
+                      <div className="flex-1 flex flex-col sm:flex-row gap-1.5 sm:items-center">
                         <input
                           id={`edit-unit-field-${unit}`}
                           type="text"

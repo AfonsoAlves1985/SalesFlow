@@ -94,11 +94,11 @@ export default function ComandaList({
   };
 
   return (
-    <div className="flex flex-col gap-6 animate-fadeIn">
+    <div className="flex flex-col gap-4 lg:gap-6 animate-fadeIn min-w-0">
       {/* Visual Analytics Widgets */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
         {/* Card 1 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between gap-3 min-w-0">
           <div>
             <span className="text-[10px] font-extrabold tracking-widest text-slate-500 uppercase">Comandas Ativas</span>
             <h3 className="text-2xl font-black text-slate-800 mt-1">{activeComandas.length}</h3>
@@ -113,7 +113,7 @@ export default function ComandaList({
         </div>
 
         {/* Card 2 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between gap-3 min-w-0">
           <div>
             <span className="text-[10px] font-extrabold tracking-widest text-slate-500 uppercase">Pendente Geral (Receber)</span>
             <h3 className="text-2xl font-black text-rose-600 mt-1">R$ {totalPendingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
@@ -125,7 +125,7 @@ export default function ComandaList({
         </div>
 
         {/* Card 3 */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-4 lg:p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between gap-3 min-w-0">
           <div>
             <span className="text-[10px] font-extrabold tracking-widest text-slate-500 uppercase">Faturado / Fechado</span>
             <h3 className="text-2xl font-black text-emerald-600 mt-1">R$ {totalPaidBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
@@ -141,7 +141,7 @@ export default function ComandaList({
       </div>
 
       {/* Control Filters and Action Area */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+      <div className="bg-white p-3 sm:p-5 rounded-2xl border border-slate-100 shadow-sm min-w-0">
         <div className="flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center mb-6">
           <div className="flex-1 relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
@@ -154,14 +154,14 @@ export default function ComandaList({
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="sf-fluid-actions lg:justify-end">
             {/* Filter classification */}
-            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 min-w-0">
               <Filter className="w-3 h-3 text-slate-400" />
               <select
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value as ClientType | 'Todos')}
-                className="bg-transparent border-none text-[11px] font-bold focus:outline-none pr-2 cursor-pointer text-slate-600"
+                className="w-full bg-transparent border-none text-[11px] font-bold focus:outline-none pr-2 cursor-pointer text-slate-600"
               >
                 <option value="Todos">Todas Classificações</option>
                 <option value="Aluno">Alunos</option>
@@ -171,11 +171,11 @@ export default function ComandaList({
             </div>
 
             {/* Filter payment status */}
-            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 min-w-0">
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value as PaymentStatus | 'Todos')}
-                className="bg-transparent border-none text-[11px] font-bold focus:outline-none cursor-pointer text-slate-600"
+                className="w-full bg-transparent border-none text-[11px] font-bold focus:outline-none cursor-pointer text-slate-600"
               >
                 <option value="Todos">Todos Pagamentos</option>
                 <option value="Pendente">Pendentes</option>
@@ -184,11 +184,11 @@ export default function ComandaList({
             </div>
 
             {/* Filter Month */}
-            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 min-w-0">
                <select
                  value={selectedMonth}
                  onChange={(e) => setSelectedMonth(e.target.value)}
-                 className="bg-transparent border-none text-[11px] font-bold focus:outline-none cursor-pointer text-slate-600"
+                 className="w-full bg-transparent border-none text-[11px] font-bold focus:outline-none cursor-pointer text-slate-600"
                >
                  <option value="Todos">Todos os Meses</option>
                  {MONTHS.map(m => (
@@ -198,11 +198,11 @@ export default function ComandaList({
             </div>
 
             {/* Filter Unit */}
-            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 shadow-3xs" title="Filtrar comanda por unidade do estabelecimento">
+            <div className="flex items-center gap-1 text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 shadow-3xs min-w-0" title="Filtrar comanda por unidade do estabelecimento">
                <select
                  value={selectedUnit}
                  onChange={(e) => setSelectedUnit(e.target.value)}
-                 className="bg-transparent border-none text-[11px] font-extrabold focus:outline-none cursor-pointer text-slate-600 focus:text-indigo-600 transition"
+                 className="w-full bg-transparent border-none text-[11px] font-extrabold focus:outline-none cursor-pointer text-slate-600 focus:text-indigo-600 transition"
                >
                  <option value="Todos">Todas Unidades</option>
                  {unidades.map(u => (
@@ -239,9 +239,73 @@ export default function ComandaList({
           </div>
         </div>
 
+        {/* Mobile cards */}
+        <div className="md:hidden space-y-2">
+          {filteredComandas.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-xs">
+              {comandas.length > 0 && hasActiveFilters
+                ? 'Existe comanda cadastrada, mas os filtros atuais estão ocultando o resultado.'
+                : 'Nenhuma comanda cadastrada ainda.'}
+              {comandas.length > 0 && hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="block mx-auto mt-3 text-frz-primary hover:text-frz-primary-hover font-black underline underline-offset-4"
+                >
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredComandas.map((comanda) => {
+              const total = getComandaTotal(comanda);
+              const isPaid = comanda.status === 'Pago';
+              const isSelected = selectedComanda?.id === comanda.id;
+              return (
+                <button
+                  key={comanda.id}
+                  type="button"
+                  onClick={() => onSelect(comanda)}
+                  className={`w-full text-left p-3.5 rounded-2xl border transition ${isSelected ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-[10px] font-black text-indigo-600">{comanda.id}</div>
+                      <div className="font-black text-slate-900 text-sm truncate">{comanda.clientName}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{comanda.courseOrTraining}</div>
+                    </div>
+                    <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${isPaid ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isPaid ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                      {comanda.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Tipo</span>
+                      <span className="font-black text-slate-700">{comanda.clientType}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Unidade</span>
+                      <span className="font-black text-slate-700 truncate block">{comanda.unit || 'Sede Principal'}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Itens</span>
+                      <span className="font-black text-slate-700">{comanda.items.length}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2 text-right">
+                      <span className="block text-slate-400 font-bold">Total</span>
+                      <span className="font-black text-slate-900">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
         {/* Comandas Grid / Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="hidden md:block sf-table-scroll">
+          <table className="sf-table w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
                 <th className="py-3 px-4">Comanda ID</th>

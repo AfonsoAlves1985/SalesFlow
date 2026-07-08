@@ -218,9 +218,9 @@ export default function StockManagement({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn min-w-0">
       {/* Header Panel */}
-      <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+      <div className="p-4 sm:p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <Package className="w-5 h-5 text-indigo-600" />
@@ -230,7 +230,7 @@ export default function StockManagement({
             Cadastre os produtos validados que estarão disponíveis para consumo via comanda e QR Code.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="sf-fluid-actions md:flex-nowrap">
           <button
             onClick={() => setIsCategoryModalOpen(true)}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-frz-primary hover:bg-frz-primary-hover text-white border border-frz-primary-hover/30 rounded-xl text-xs font-extrabold transition cursor-pointer"
@@ -249,7 +249,7 @@ export default function StockManagement({
         </div>
       </div>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         {/* Search Bar */}
         <div className="relative mb-5">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
@@ -291,7 +291,7 @@ export default function StockManagement({
             <h3 className="text-sm font-bold text-indigo-950 mb-4 flex items-center gap-2">
               {editingId ? 'Editar Produto' : 'Cadastrar Novo Item no Estoque'}
             </h3>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <div>
                 <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Código do Item</label>
                 <input
@@ -303,7 +303,7 @@ export default function StockManagement({
                 />
               </div>
 
-              <div className="md:col-span-1 lg:col-span-2">
+              <div className="md:col-span-1 xl:col-span-2">
                 <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Nome do Produto</label>
                 <input
                   type="text"
@@ -376,7 +376,7 @@ export default function StockManagement({
                 </select>
               </div>
 
-              <div className="md:col-span-2 lg:col-span-2">
+              <div className="md:col-span-2 xl:col-span-2">
                 <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Fornecedor</label>
                 <input
                   type="text"
@@ -387,11 +387,11 @@ export default function StockManagement({
                 />
               </div>
 
-              <div className="md:col-span-2 lg:col-span-5">
+              <div className="md:col-span-2 xl:col-span-5">
                 <label className="block text-[11px] font-extrabold text-indigo-950 uppercase tracking-wider mb-1">Imagem do Produto</label>
-                <div className="flex gap-2 items-start">
+                <div className="flex flex-col sm:flex-row gap-2 items-start">
                   <div className="flex-1 space-y-1.5">
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text"
                         placeholder="URL da imagem..."
@@ -457,7 +457,7 @@ export default function StockManagement({
                 </div>
               </div>
 
-              <div className="md:col-span-2 lg:col-span-5 flex justify-end gap-2 mt-2">
+              <div className="md:col-span-2 xl:col-span-5 flex flex-col sm:flex-row sm:justify-end gap-2 mt-2">
                 <button
                   type="button"
                   onClick={closeForm}
@@ -477,9 +477,93 @@ export default function StockManagement({
           </div>
         )}
 
+        {/* Mobile Product Cards */}
+        <div className="lg:hidden space-y-2">
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-xs font-normal">
+              Nenhum produto cadastrado que corresponda à busca.
+            </div>
+          ) : (
+            filteredProducts.map((p) => {
+              const productMinStock = getMinimumStock(p);
+              const isLowStock = p.stock <= productMinStock;
+              const isOut = p.stock === 0;
+              const marginPercent = getMarginPercent(p);
+
+              return (
+                <div key={p.id} className="bg-white border border-slate-100 rounded-2xl p-3.5 shadow-sm">
+                  <div className="flex gap-3">
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="w-14 h-14 object-cover rounded-xl border border-slate-200 shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 shrink-0">
+                        <ImageIcon className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 text-sm truncate">{p.name}</div>
+                          <div className="font-mono text-[10px] text-slate-500">{p.code}</div>
+                        </div>
+                        <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isOut ? 'bg-rose-50 text-rose-600' : isLowStock ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${isOut ? 'bg-rose-500' : isLowStock ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                          {p.stock} un
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">{p.category}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">{p.supplier || 'Sem fornecedor'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Custo</span>
+                      <span className="font-black text-slate-800">R$ {Number(p.costPrice || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Preço</span>
+                      <span className="font-black text-slate-900">R$ {Number(p.price || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl px-2.5 py-2">
+                      <span className="block text-slate-400 font-bold">Margem</span>
+                      <span className={`font-black ${marginPercent === null ? 'text-slate-400' : marginPercent < 20 ? 'text-rose-600' : marginPercent < 35 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {marginPercent === null ? 'n/d' : `${marginPercent.toFixed(1)}%`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleEdit(p)}
+                      className="py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center justify-center gap-1 text-xs font-black cursor-pointer"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Remover "${p.name}" permanentemente do estoque?`)) {
+                          onDeleteProduct(p.id);
+                        }
+                      }}
+                      className="py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition flex items-center justify-center gap-1 text-xs font-black cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
         {/* Desktop Product Table */}
-        <div className="overflow-x-auto border border-slate-100 rounded-xl">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="hidden lg:block sf-table-scroll border border-slate-100 rounded-xl">
+          <table className="sf-table w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
                 <th className="py-3 px-4 w-12">Foto</th>
@@ -596,7 +680,7 @@ export default function StockManagement({
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl border border-slate-150 shadow-xl max-w-md w-full overflow-hidden flex flex-col cursor-default"
+            className="bg-white rounded-2xl border border-slate-150 shadow-xl max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col cursor-default"
           >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2">
@@ -614,9 +698,9 @@ export default function StockManagement({
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
               {/* Form to add secondary category */}
-              <form onSubmit={handleAddCategory} className="flex gap-2">
+              <form onSubmit={handleAddCategory} className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   placeholder="Nova categoria (Ex: Doces, Limpeza)"
@@ -648,7 +732,7 @@ export default function StockManagement({
                     return (
                       <div key={cat} className="p-3 flex items-center justify-between text-xs gap-3">
                         {isEditing ? (
-                          <div className="flex-1 flex gap-1.5 items-center">
+                          <div className="flex-1 flex flex-col sm:flex-row gap-1.5 sm:items-center">
                             <input
                               type="text"
                               value={categoryEditText}

@@ -99,18 +99,18 @@ export default function ComandaDetailView({
   const availableProductsForDropdown = products.filter(p => p.stock > 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn min-w-0">
       {/* Detail header */}
-      <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-black tracking-widest text-[#4F46E5] uppercase px-2 py-0.5 bg-indigo-50 rounded-full">
               Comanda Individual
             </span>
             <span className="text-[10px] text-slate-600 font-bold">Criado em: {new Date(comanda.createdAt || Date.now()).toLocaleDateString('pt-BR')}</span>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900 mt-1 flex items-center gap-2">
-            {comanda.clientName}
+          <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 mt-1 flex flex-wrap items-center gap-2">
+            <span className="truncate">{comanda.clientName}</span>
             <span className="text-xs font-mono font-medium text-slate-400">({comanda.id})</span>
           </h1>
           <p className="text-xs text-slate-700 mt-1">
@@ -137,12 +137,12 @@ export default function ComandaDetailView({
       <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
         
         {/* Main interactive items table section */}
-        <div className="lg:col-span-2 p-6 flex flex-col justify-between">
+        <div className="lg:col-span-2 p-4 sm:p-6 flex flex-col justify-between min-w-0">
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Itens Consumidos</h3>
             
-            <div className="overflow-x-auto border border-slate-50 rounded-xl mb-6">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="sf-table-scroll border border-slate-50 rounded-xl mb-6">
+              <table className="sf-table w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-700 font-extrabold uppercase tracking-wider text-[10px]">
                     <th className="py-2 px-3">Código</th>
@@ -284,7 +284,7 @@ export default function ComandaDetailView({
               <form onSubmit={handleAddItemSubmit} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mt-4">
                 <div className="mb-3">
                   <label className="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Selecionar Produto</label>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-[180px] overflow-y-auto pr-1">
                     {availableProductsForDropdown.length === 0 ? (
                       <div className="col-span-full text-center py-3 text-slate-400 text-[10px]">Nenhum produto disponível em estoque.</div>
                     ) : (
@@ -469,7 +469,7 @@ export default function ComandaDetailView({
           <div 
             id="cashier-item-detail-card" 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 relative text-left cursor-default"
+            className="bg-white rounded-3xl p-4 sm:p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl border border-slate-100 relative text-left cursor-default"
           >
             <button
               id="cashier-item-detail-close-btn"
@@ -497,7 +497,7 @@ export default function ComandaDetailView({
                 <span className="text-[10px] font-semibold text-indigo-600 font-mono mt-0.5 block">Código do Estoque: {viewingItemDetail.productCode}</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3 rounded-2xl border border-slate-100">
                 <div>
                   <span className="text-[9px] uppercase font-black text-slate-400 block mb-0.5">📅 Data de Lançamento</span>
                   <span className="font-extrabold text-slate-800 text-xs">
@@ -512,7 +512,7 @@ export default function ComandaDetailView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-slate-50/70 border border-slate-100 rounded-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 py-2 px-3 bg-slate-50/70 border border-slate-100 rounded-2xl">
                 <div>
                   <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Preço Unitário</span>
                   <span className="font-extrabold text-slate-700">R$ {Number(viewingItemDetail.price || 0).toFixed(2)}</span>

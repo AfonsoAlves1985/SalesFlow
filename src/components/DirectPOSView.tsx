@@ -487,7 +487,7 @@ export default function DirectPOSView({
   const receiptCustomer = lastSale?.customerName || customerName.trim() || 'Cliente consumidor';
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-frz-card overflow-hidden animate-fadeIn">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-frz-card overflow-hidden animate-fadeIn min-w-0">
       <div className="bg-frz-primary px-4 py-3 text-center text-lg md:text-xl font-black tracking-wide text-white">
         PDV - Venda Direta
       </div>
@@ -529,17 +529,17 @@ export default function DirectPOSView({
             )}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr_360px] gap-6 p-5">
-            <section className="bg-slate-50 border border-slate-200 rounded-xl p-3 min-h-[340px] flex items-center justify-center">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(220px,280px)_minmax(0,1fr)_minmax(320px,360px)] gap-4 xl:gap-6 p-3 sm:p-5">
+            <section className="bg-slate-50 border border-slate-200 rounded-xl p-3 min-h-[220px] sm:min-h-[300px] 2xl:min-h-[340px] flex items-center justify-center">
               {selectedProduct?.image ? (
-                <img src={selectedProduct.image} alt={selectedProduct.name} className="max-h-[310px] w-full object-contain bg-white rounded-lg" />
+                <img src={selectedProduct.image} alt={selectedProduct.name} className="max-h-[210px] sm:max-h-[280px] 2xl:max-h-[310px] w-full object-contain bg-white rounded-lg" />
               ) : selectedProduct ? (
-                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 border border-slate-100">
+                <div className="w-full min-h-[210px] sm:min-h-[280px] 2xl:h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 border border-slate-100">
                   <ImageIcon className="w-16 h-16" />
                   <span className="text-xs font-bold mt-2 text-slate-500">Produto sem foto</span>
                 </div>
               ) : (
-                <div className="w-full h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 text-center px-6 border border-slate-100">
+                <div className="w-full min-h-[210px] sm:min-h-[280px] 2xl:h-[310px] bg-white rounded-lg flex flex-col items-center justify-center text-slate-500 text-center px-6 border border-slate-100">
                   <ImageIcon className="w-14 h-14 mb-3" />
                   <p className="text-sm font-black uppercase">Foto do produto</p>
                   <p className="text-xs mt-1">Aparece após inserir código ou nome.</p>
@@ -560,7 +560,7 @@ export default function DirectPOSView({
                         selectedProduct ? handleAddItem() : handleSearchSubmit();
                       }
                     }}
-                    className="w-full max-w-xl px-3 py-2.5 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-xl font-mono shadow-inner focus:outline-none focus:border-frz-primary focus:bg-white transition"
+                    className="w-full max-w-xl px-3 py-2.5 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-base sm:text-xl font-mono shadow-inner focus:outline-none focus:border-frz-primary focus:bg-white transition"
                     placeholder="Digite ou escaneie o código"
                   />
                   <button
@@ -600,7 +600,7 @@ export default function DirectPOSView({
                   <input
                     value={quantity}
                     onChange={e => handleQuantityChange(e.target.value)}
-                    className="w-28 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-xl font-mono text-center shadow-inner focus:outline-none focus:border-frz-primary focus:bg-white transition"
+                    className="w-24 sm:w-28 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-base sm:text-xl font-mono text-center shadow-inner focus:outline-none focus:border-frz-primary focus:bg-white transition"
                   />
                   <button
                     onClick={() => setQuantity(q => q + 1)}
@@ -616,7 +616,7 @@ export default function DirectPOSView({
                 <input
                   readOnly
                   value={selectedProduct ? selectedProduct.price.toFixed(2).replace('.', ',') : ''}
-                  className="w-44 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-xl font-mono"
+                  className="w-full sm:w-44 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-base sm:text-xl font-mono"
                 />
               </div>
 
@@ -625,14 +625,14 @@ export default function DirectPOSView({
                 <input
                   readOnly
                   value={selectedProduct ? itemTotal.toFixed(2).replace('.', ',') : ''}
-                  className="w-44 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-xl font-mono"
+                  className="w-full sm:w-44 px-3 py-2 bg-slate-50 text-slate-900 border-2 border-slate-200 rounded-xl text-base sm:text-xl font-mono"
                 />
               </div>
 
-              <div className="flex flex-wrap gap-3 pt-4">
+              <div className="sf-fluid-actions sm:flex-row pt-4">
                 <button
                   onClick={handleAddItem}
-                  className="w-56 py-3 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-base font-black shadow-sm cursor-pointer transition"
+                  className="w-full sm:w-56 py-3 bg-frz-primary hover:bg-frz-primary-hover text-white rounded-xl text-base font-black shadow-sm cursor-pointer transition"
                 >
                   Venda
                 </button>
@@ -646,7 +646,7 @@ export default function DirectPOSView({
             </section>
 
             <aside className="space-y-3">
-              <div className="bg-white text-slate-900 rounded-xl border-2 border-slate-200 shadow-sm p-4 min-h-[430px] font-mono text-[10px] flex flex-col">
+              <div className="bg-white text-slate-900 rounded-xl border-2 border-slate-200 shadow-sm p-4 min-h-[320px] sm:min-h-[430px] font-mono text-[10px] flex flex-col">
                 <div className="text-center border-b border-dashed border-slate-300 pb-2 mb-2 leading-tight">
                   <p className="font-black uppercase text-[11px]">{operatingUnit}</p>
                   <p>ENDEREÇO DA EMPRESA</p>

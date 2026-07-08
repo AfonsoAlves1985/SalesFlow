@@ -228,9 +228,9 @@ export default function AccessManagement({
   );
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden animate-fadeIn min-w-0">
       {/* Header Panel */}
-      <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+      <div className="p-4 sm:p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <Users className="w-5 h-5 text-indigo-600" />
@@ -249,7 +249,7 @@ export default function AccessManagement({
         </button>
       </div>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         {/* Info Box about System Invitations */}
         <div className="mb-6 p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col sm:flex-row gap-3.5 text-xs text-slate-600">
           <div className="w-9 h-9 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
@@ -274,8 +274,8 @@ export default function AccessManagement({
         </div>
 
         {/* Users Table / List */}
-        <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="sf-table-scroll rounded-xl border border-slate-100">
+          <table className="sf-table w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider">
                 <th className="py-3 px-4">Nome completo / Login</th>
@@ -335,7 +335,7 @@ export default function AccessManagement({
                         )}
                       </td>
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex flex-wrap items-center justify-center gap-2">
                           {user.status === 'invited' && user.invitationCode && (
                             <>
                               <button
@@ -399,8 +399,8 @@ export default function AccessManagement({
       </div>
 
       {/* DANGER ZONE - Reset System */}
-      <div className="mx-6 mb-6 p-5 bg-rose-50 border-2 border-rose-200 rounded-2xl">
-        <div className="flex items-start gap-3">
+      <div className="mx-3 sm:mx-6 mb-6 p-4 sm:p-5 bg-rose-50 border-2 border-rose-200 rounded-2xl">
+        <div className="flex flex-col sm:flex-row items-start gap-3">
           <div className="p-2 bg-rose-100 rounded-xl shrink-0">
             <AlertTriangle className="w-5 h-5 text-rose-600" />
           </div>
@@ -412,7 +412,7 @@ export default function AccessManagement({
             </p>
           </div>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex">
           <button
             onClick={() => {
               setShowResetConfirm(true);
@@ -420,7 +420,7 @@ export default function AccessManagement({
               setResetPassword('');
               setResetError('');
             }}
-            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-sm flex items-center gap-2"
+            className="w-full sm:w-auto sm:ml-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
             Zerar Sistema
@@ -436,7 +436,7 @@ export default function AccessManagement({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden animate-slideUp cursor-default"
+            className="bg-white rounded-3xl max-w-md w-full max-h-[calc(100dvh-2rem)] border border-slate-100 shadow-2xl overflow-y-auto animate-slideUp cursor-default"
           >
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-3">
@@ -515,7 +515,7 @@ export default function AccessManagement({
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl relative space-y-5 animate-slideUp cursor-default"
+            className="bg-white rounded-3xl p-4 sm:p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto border border-slate-100 shadow-2xl relative space-y-5 animate-slideUp cursor-default"
           >
             <div className="flex justify-between items-start">
               <div>
@@ -548,7 +548,7 @@ export default function AccessManagement({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wide mb-1">Username (Login)</label>
                   <input
@@ -575,12 +575,12 @@ export default function AccessManagement({
 
               {/* Status and password inputs if Active */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-3.5">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <span className="text-[11px] font-extrabold text-slate-700 block">Tipo de Registro</span>
                     <span className="text-[9px] text-slate-500 font-medium">Atribuir status de ativação da conta</span>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => setStatus('invited')}
@@ -655,7 +655,7 @@ export default function AccessManagement({
                 </div>
               )}
 
-              <div className="flex gap-2.5 pt-2 border-t border-slate-100 mt-4">
+              <div className="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-100 mt-4">
                 <button
                   type="button"
                   onClick={closeForm}
@@ -691,7 +691,7 @@ export default function AccessManagement({
           <div 
             id="invite-dispatch-success-card" 
             onClick={(e) => e.stopPropagation()}
-            className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative text-left text-white space-y-5 animate-slideUp cursor-default"
+            className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl relative text-left text-white space-y-5 animate-slideUp cursor-default"
           >
             <div className="text-center">
               <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-3 animate-bounce">
@@ -730,7 +730,7 @@ export default function AccessManagement({
               <span className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">
                 Copiar e Enviar Link para Ativação do Usuário:
               </span>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   readOnly

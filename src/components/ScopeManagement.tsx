@@ -213,8 +213,8 @@ export default function ScopeManagement({
   };
 
   return (
-    <div className="space-y-4 animate-fadeIn">
-      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+    <div className="space-y-4 animate-fadeIn min-w-0">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-4 sm:p-5 min-w-0">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-4">
           <div>
             <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Administração</span>
@@ -224,12 +224,12 @@ export default function ScopeManagement({
         </div>
 
         {/* Tab selector */}
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-5">
+        <div className="sf-table-scroll flex gap-1 bg-slate-100 rounded-xl p-1 mb-5">
           {(['companies', 'workspaces', 'spaces'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+              className={`min-w-[110px] flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer ${
                 activeTab === tab
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-500 hover:text-slate-800'
@@ -243,7 +243,7 @@ export default function ScopeManagement({
         {/* Companies Tab */}
         {activeTab === 'companies' && (
           <div className="space-y-4">
-            <form onSubmit={handleAddCompany} className="flex gap-2">
+            <form onSubmit={handleAddCompany} className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 placeholder="Nova empresa (Ex: Grupo FRZ)"
@@ -331,7 +331,7 @@ export default function ScopeManagement({
         {/* Workspaces Tab */}
         {activeTab === 'workspaces' && (
           <div className="space-y-4">
-            <form onSubmit={handleAddWorkspace} className="flex gap-2">
+            <form onSubmit={handleAddWorkspace} className="flex flex-col sm:flex-row gap-2">
               <select
                 value={newWorkspaceCompanyId}
                 onChange={(e) => setNewWorkspaceCompanyId(e.target.value)}
@@ -428,7 +428,7 @@ export default function ScopeManagement({
         {/* Spaces Tab */}
         {activeTab === 'spaces' && (
           <div className="space-y-4">
-            <form onSubmit={handleAddSpace} className="flex flex-wrap gap-2">
+            <form onSubmit={handleAddSpace} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] gap-2">
               <select
                 value={newSpaceCompanyId}
                 onChange={(e) => {
@@ -457,7 +457,7 @@ export default function ScopeManagement({
                 placeholder="Nome da frente"
                 value={newSpaceName}
                 onChange={(e) => setNewSpaceName(e.target.value)}
-                className="flex-1 min-w-[120px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-frz-primary/20"
+                className="w-full min-w-0 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-frz-primary/20"
                 required
               />
               <select

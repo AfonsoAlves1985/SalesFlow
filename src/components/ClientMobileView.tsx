@@ -232,7 +232,7 @@ export default function ClientMobileView({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[390px] min-h-[620px] bg-slate-50 rounded-2xl shadow-lg border border-slate-200 relative flex flex-col overflow-hidden animate-fadeIn select-none">
+    <div className="mx-auto w-full max-w-[390px] min-h-[100dvh] sm:min-h-[620px] bg-slate-50 sm:rounded-2xl shadow-lg border border-slate-200 relative flex flex-col overflow-hidden animate-fadeIn select-none">
       
       {/* Screen Content Window */}
       <div className="flex-1 overflow-y-auto relative flex flex-col p-4 pt-3 text-slate-700">

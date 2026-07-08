@@ -2972,7 +2972,7 @@ export default function App() {
       <div id="app-root" className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-0 md:p-4 select-none">
         
         {/* SalesFlow Live Automatic Email/SMS Toast Despatches */}
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+        <div className="fixed bottom-3 left-3 right-3 sm:left-auto sm:bottom-4 sm:right-4 z-50 flex flex-col gap-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
           {activeToasts.map(toast => (
             <div
               key={toast.id}
@@ -2991,7 +2991,7 @@ export default function App() {
         </div>
 
         {/* Outer view wrapping just the client card but seamlessly styled */}
-        <div className="w-full max-w-[390px] min-h-screen md:min-h-[640px] flex items-center justify-center">
+        <div className="w-full max-w-[390px] min-h-[100dvh] md:min-h-[640px] flex items-center justify-center">
           <ClientMobileView
             comandas={scopedComandas}
             products={scopedProducts}
@@ -3010,7 +3010,7 @@ export default function App() {
     <div id="app-root" className={`min-h-screen flex flex-col font-sans transition-colors duration-500 ${themeStyle.bg}`}>
       
       {/* SalesFlow Live Automatic Email/SMS Toast Despatches */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+      <div className="fixed bottom-3 left-3 right-3 sm:left-auto sm:bottom-4 sm:right-4 z-50 flex flex-col gap-2 sm:max-w-sm w-auto sm:w-full pointer-events-none">
         {activeToasts.map(toast => (
           <div
             key={toast.id}
@@ -3029,11 +3029,11 @@ export default function App() {
       </div>
 
       {/* 2. DYNAMIC LAYOUT AREA */}
-      <main className="flex-1 max-w-full w-full mx-auto p-3 md:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+      <main className="flex-1 max-w-full w-full mx-auto p-2 sm:p-3 lg:p-4 grid grid-cols-1 2xl:grid-cols-12 gap-3 lg:gap-4 items-stretch">
         
         {/* LEFT COLUMN: ESTAÇÃO PRINCIPAL / ADMIN POS (Renders if mode is BOTH or ADMIN) */}
         {(viewMode === 'both' || viewMode === 'admin') && (
-          <div className={`${viewMode === 'both' && activeAdminSubTab !== 'pdv' ? 'lg:col-span-8' : 'lg:col-span-12'} flex flex-col gap-4`}>
+          <div className={`${viewMode === 'both' && activeAdminSubTab !== 'pdv' ? '2xl:col-span-8' : '2xl:col-span-12'} min-w-0 flex flex-col gap-3 lg:gap-4`}>
             
             {session === null ? (
               userForPasswordChange ? (
@@ -3169,14 +3169,14 @@ export default function App() {
               /* ACTIVE POS WORKSPACE */
               <>
                 {/* Active Session strip - displaying roles, cashier status, shift triggers */}
-                <div className="bg-slate-800/45 p-3 rounded-2xl border border-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div className="flex items-center gap-3">
+                <div className="bg-slate-800/45 p-3 rounded-2xl border border-slate-700/30 flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-slate-700 flex items-center justify-center text-slate-300">
                       <Users className="w-4 h-4" />
                     </div>
-                    <div>
-                      <div className="text-xs font-bold text-white flex items-center gap-2">
-                        {session.username}
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white flex items-center gap-2 min-w-0">
+                        <span className="truncate">{session.username}</span>
                         <span className="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-black uppercase">{getUserRoleLabel(session.role)}</span>
                       </div>
                       <p className="text-[10px] text-slate-400">Sessão Comercial Autenticada</p>
@@ -3202,8 +3202,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-900/60 border border-slate-700/40 p-2.5 rounded-2xl shadow-inner w-full xl:w-auto">
-                    <div className="text-left min-w-[130px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-900/60 border border-slate-700/40 p-2.5 rounded-2xl shadow-inner w-full xl:w-auto min-w-0">
+                    <div className="text-left min-w-0 sm:min-w-[130px]">
                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Empresa</span>
                       <select
                         value={activeCompanyId}
@@ -3223,7 +3223,7 @@ export default function App() {
                         ))}
                       </select>
                     </div>
-                    <div className="text-left min-w-[130px]">
+                    <div className="text-left min-w-0 sm:min-w-[130px]">
                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Workspace</span>
                       <select
                         value={activeWorkspaceId}
@@ -3241,7 +3241,7 @@ export default function App() {
                         ))}
                       </select>
                     </div>
-                    <div className="text-left min-w-[130px]">
+                    <div className="text-left min-w-0 sm:min-w-[130px]">
                       <span className="text-[8px] font-black uppercase text-slate-400 block tracking-widest leading-none mb-1">Frente de Venda</span>
                       <select
                         value={activeSpaceId}
@@ -3256,9 +3256,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
                     {scopedActiveShift ? (
-                      <div className="flex items-center gap-2 w-full justify-between sm:justify-end">
+                      <div className="flex flex-wrap items-center gap-2 w-full justify-between sm:justify-end">
                         <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                           Caixa Aberto ({scopedActiveShift.id})
@@ -3274,7 +3274,7 @@ export default function App() {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 w-full justify-between sm:justify-end">
+                      <div className="flex flex-wrap items-center gap-2 w-full justify-between sm:justify-end">
                         <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3 text-amber-400 animate-pulse" />
                           Caixa Fechado
@@ -3319,9 +3319,9 @@ export default function App() {
                 </div>
 
                 {/* Sidebar + Content Layout */}
-                <div className="flex flex-col xl:flex-row gap-3 items-stretch">
+                <div className="flex flex-col xl:flex-row gap-3 items-stretch min-w-0">
                   {/* Sidebar */}
-                  <aside className={`bg-[#111827] border border-slate-800/80 rounded-2xl shadow-frz-card shrink-0 overflow-hidden text-white flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] transition-all duration-300 ${sidebarCollapsed ? 'w-[68px]' : 'w-full xl:w-[232px]'}`}>
+                  <aside className={`bg-[#111827] border border-slate-800/80 rounded-2xl shadow-frz-card shrink-0 overflow-hidden text-white flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] transition-all duration-300 ${sidebarCollapsed ? 'w-full xl:w-[68px]' : 'w-full xl:w-[232px]'}`}>
                     {/* Header - click to toggle collapse */}
                     <button
                       onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -3338,9 +3338,9 @@ export default function App() {
                       )}
                     </button>
 
-                    <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+                    <nav className="flex-1 overflow-x-auto xl:overflow-y-auto px-2.5 py-3 flex xl:block gap-2 xl:space-y-4">
                       {(hasTabAccess('comandas') || hasTabAccess('pdv') || hasTabAccess('caixa_notificacoes')) && (
-                      <div className="space-y-1">
+                      <div className="space-y-1 min-w-[190px] xl:min-w-0">
                         {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Operação</span>}
                         {hasTabAccess('comandas') && (
                         <button
@@ -3418,7 +3418,7 @@ export default function App() {
                       )}
 
                       {(hasTabAccess('estoque') || hasTabAccess('fluxo')) && (
-                      <div className="space-y-1">
+                      <div className="space-y-1 min-w-[190px] xl:min-w-0">
                         {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Compras</span>}
                         {hasTabAccess('estoque') && (
                         <button
@@ -3472,7 +3472,7 @@ export default function App() {
                       )}
 
                       {(hasTabAccess('acessos') || hasTabAccess('auditoria')) && (
-                        <div className="space-y-1">
+                        <div className="space-y-1 min-w-[190px] xl:min-w-0">
                           {!sidebarCollapsed && <span className="px-2.5 text-[10px] font-black uppercase tracking-widest text-blue-300/80">Administração</span>}
                           {hasTabAccess('acessos') && (
                           <button
@@ -3593,7 +3593,7 @@ export default function App() {
                   </aside>
 
                   {/* Content area */}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 space-y-3 lg:space-y-4">
 
                 {/* Warning message if they haven't opened the cashier register yet */}
                 {!scopedActiveShift && activeAdminSubTab !== 'caixa_notificacoes' && activeAdminSubTab !== 'acessos' && activeAdminSubTab !== 'auditoria' && activeAdminSubTab !== 'pdv' && activeAdminSubTab !== 'frentes' && (
@@ -4098,7 +4098,7 @@ export default function App() {
 
         {/* RIGHT COLUMN: REASSURING LIVE SMARTPHONE SIMULATOR FOR CUSTOMER (Renders if mode is BOTH or CLIENT) */}
         {(viewMode === 'both' || viewMode === 'client') && (
-          <div className={`${viewMode === 'both' ? 'lg:col-span-4' : 'lg:col-span-12'} flex flex-col items-center justify-start`}>
+          <div className={`${viewMode === 'both' ? '2xl:col-span-4' : '2xl:col-span-12'} min-w-0 flex flex-col items-center justify-start`}>
             
             {/* Return button when in client-only mode */}
             {viewMode === 'client' && (
