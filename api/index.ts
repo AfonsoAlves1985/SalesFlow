@@ -204,6 +204,28 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
 let supabase: any = null;
 const REALTIME_SIGNAL_ID = 'global';
+const STATE_CACHE_TTL_MS = Number(process.env.STATE_CACHE_TTL_MS || 5000);
+const statePullCache = new Map<string, number>();
+
+function normalizeScope(scope: any = DEFAULT_SCOPE) {
+  return {
+    companyId: scope?.companyId || DEFAULT_SCOPE.companyId,
+    workspaceId: scope?.workspaceId || DEFAULT_SCOPE.workspaceId,
+    spaceId: scope?.spaceId || DEFAULT_SCOPE.spaceId
+  };
+}
+
+function applyScopeFilter(query: any, scope: any) {
+  const normalized = normalizeScope(scope);
+  return query
+    .eq('company_id', normalized.companyId)
+    .eq('workspace_id', normalized.workspaceId)
+    .eq('space_id', normalized.spaceId);
+}
+
+function invalidateStateCache() {
+  statePullCache.clear();
+}
 
 async function initSupabase() {
   if (!supabaseUrl || !supabaseKey) return;
@@ -215,17 +237,18 @@ async function initSupabase() {
   }
 }
 
-async function pullFromSupabase(defaults: any, light = false) {
+async function pullFromSupabase(defaults: any, light = false, scope = DEFAULT_SCOPE) {
   if (!supabase) return null;
   try {
+    const normalizedScope = normalizeScope(scope);
     const defaultProducts = Array.isArray(defaults?.products) ? defaults.products : [];
     const [cats, units, prods, coms, notifs, stockMovs] = await Promise.all([
-      supabase.from('categories').select('name,company_id,workspace_id,space_id'),
-      supabase.from('unidades').select('name,company_id,workspace_id,space_id'),
-      supabase.from('products').select(light ? 'id,code,name,price,stock,category,updated_at' : '*'),
-      supabase.from('comandas').select('*').order('created_at', { ascending: false }),
-      supabase.from('notifications').select('*').order('timestamp', { ascending: false }).limit(50),
-      supabase.from('stock_movements').select('*').order('timestamp', { ascending: false }).limit(200),
+      applyScopeFilter(supabase.from('categories').select('name,company_id,workspace_id,space_id'), normalizedScope),
+      applyScopeFilter(supabase.from('unidades').select('name,company_id,workspace_id,space_id'), normalizedScope),
+      applyScopeFilter(supabase.from('products').select(light ? 'id,code,name,price,stock,category,updated_at,company_id,workspace_id,space_id' : '*'), normalizedScope),
+      applyScopeFilter(supabase.from('comandas').select('*'), normalizedScope).order('created_at', { ascending: false }),
+      applyScopeFilter(supabase.from('notifications').select('*'), normalizedScope).order('timestamp', { ascending: false }).limit(50),
+      applyScopeFilter(supabase.from('stock_movements').select('*'), normalizedScope).order('timestamp', { ascending: false }).limit(200),
     ]);
     const mappedComandas = (coms.data || []).map((c: any) => ({
       companyId: c.company_id || DEFAULT_SCOPE.companyId,
@@ -458,6 +481,72 @@ function mergeReceivables(incoming: any[], current: any[]) {
     .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
 }
 
+function scopedRows(rows: any[] = [], scope = DEFAULT_SCOPE) {
+  const normalized = normalizeScope(scope);
+  return rows.filter(row => sameScope(row, normalized));
+}
+
+function mergeScopedState(current: any, incoming: any, scope = DEFAULT_SCOPE) {
+  const normalized = normalizeScope(scope);
+  const sk = getScopeKey(normalized);
+  const mergeRows = (key: string) => [
+    ...(current?.[key] || []).filter((row: any) => !sameScope(row, normalized)),
+    ...(incoming?.[key] || [])
+  ];
+
+  return sanitizeState({
+    ...current,
+    ...incoming,
+    products: mergeRows('products'),
+    comandas: mergeRows('comandas'),
+    notifications: mergeRows('notifications'),
+    stockMovements: mergeRows('stockMovements'),
+    receivables: mergeRows('receivables'),
+    auditLogs: mergeAuditLogs(scopedRows(incoming?.auditLogs || [], normalized), current?.auditLogs || []),
+    categoriesByScope: {
+      ...(current?.categoriesByScope || {}),
+      [sk]: (incoming?.categoriesByScope || {})[sk] || []
+    },
+    unidadesByScope: {
+      ...(current?.unidadesByScope || {}),
+      [sk]: (incoming?.unidadesByScope || {})[sk] || []
+    }
+  });
+}
+
+function mergePartialState(current: any, changes: any, scope = DEFAULT_SCOPE) {
+  const normalized = normalizeScope(scope);
+  const sk = getScopeKey(normalized);
+  const upsertRows = (key: string, limit?: number) => {
+    const byId = new Map<string, any>();
+    (current?.[key] || []).forEach((row: any) => row?.id && byId.set(row.id, row));
+    (changes?.[key] || []).forEach((row: any) => row?.id && byId.set(row.id, row));
+    let rows = Array.from(byId.values());
+    if (limit) {
+      rows = rows
+        .sort((a: any, b: any) => new Date(b.timestamp || b.updatedAt || b.createdAt || 0).getTime() - new Date(a.timestamp || a.updatedAt || a.createdAt || 0).getTime())
+        .slice(0, limit);
+    }
+    return rows;
+  };
+
+  return sanitizeState({
+    ...current,
+    products: upsertRows('products'),
+    comandas: upsertRows('comandas'),
+    notifications: upsertRows('notifications', 50),
+    stockMovements: upsertRows('stockMovements', 1000),
+    receivables: upsertRows('receivables'),
+    auditLogs: mergeAuditLogs(changes?.auditLogs || [], current?.auditLogs || []),
+    categoriesByScope: Array.isArray(changes?.categories)
+      ? { ...(current?.categoriesByScope || {}), [sk]: changes.categories }
+      : current?.categoriesByScope,
+    unidadesByScope: Array.isArray(changes?.unidades)
+      ? { ...(current?.unidadesByScope || {}), [sk]: changes.unidades }
+      : current?.unidadesByScope
+  });
+}
+
 // --- DB persistence ---
 function loadDb() {
     const defaults = {
@@ -494,6 +583,7 @@ function saveDb() {
   try {
     db = sanitizeState(db);
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+    invalidateStateCache();
   } catch {}
 }
 
@@ -508,9 +598,23 @@ function getScopeFromReq(req: any) {
 function getStateResponse(light: boolean, req?: any) {
   const scope = req ? getScopeFromReq(req) : DEFAULT_SCOPE;
   const sk = getScopeKey(scope);
-  const response = !light ? db : {
+  const scopeProducts = scopedRows(db.products || [], scope);
+  const scopeComandas = scopedRows(db.comandas || [], scope);
+  const scopeStockMovements = scopedRows(db.stockMovements || [], scope);
+  const scopeNotifications = scopedRows(db.notifications || [], scope);
+  const scopeAuditLogs = scopedRows(db.auditLogs || [], scope);
+  const scopeReceivables = scopedRows(db.receivables || [], scope);
+  const response = !light ? {
     ...db,
-    products: (db.products || []).map((p: any) => ({
+    products: scopeProducts,
+    comandas: scopeComandas,
+    stockMovements: scopeStockMovements,
+    notifications: scopeNotifications,
+    auditLogs: scopeAuditLogs,
+    receivables: scopeReceivables
+  } : {
+    ...db,
+    products: scopeProducts.map((p: any) => ({
       companyId: p.companyId || DEFAULT_SCOPE.companyId,
       workspaceId: p.workspaceId || DEFAULT_SCOPE.workspaceId,
       spaceId: p.spaceId || DEFAULT_SCOPE.spaceId,
@@ -521,7 +625,12 @@ function getStateResponse(light: boolean, req?: any) {
       stock: p.stock,
       category: p.category,
       updatedAt: p.updatedAt
-    }))
+    })),
+    comandas: scopeComandas,
+    stockMovements: scopeStockMovements.slice(0, 100),
+    notifications: scopeNotifications.slice(0, 30),
+    auditLogs: scopeAuditLogs.slice(0, 100),
+    receivables: scopeReceivables
   };
   return {
     ...response,
@@ -534,13 +643,19 @@ function getStateResponse(light: boolean, req?: any) {
 function getStateMeta(req?: any) {
   const scope = req ? getScopeFromReq(req) : DEFAULT_SCOPE;
   const sk = getScopeKey(scope);
+  const scopeProducts = scopedRows(db.products || [], scope);
+  const scopeComandas = scopedRows(db.comandas || [], scope);
+  const scopeStockMovements = scopedRows(db.stockMovements || [], scope);
+  const scopeNotifications = scopedRows(db.notifications || [], scope);
+  const scopeAuditLogs = scopedRows(db.auditLogs || [], scope);
+  const scopeReceivables = scopedRows(db.receivables || [], scope);
   const source = JSON.stringify({
-    products: (db.products || []).map((p: any) => [p.companyId, p.workspaceId, p.spaceId, p.id, p.stock, p.price, p.category, p.updatedAt]),
-    comandas: (db.comandas || []).map((c: any) => [c.companyId, c.workspaceId, c.spaceId, c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
-    notifications: (db.notifications || []).slice(0, 5).map((n: any) => [n.id, n.timestamp, n.status]),
-    stockMovements: (db.stockMovements || []).slice(0, 5).map((m: any) => [m.id, m.timestamp]),
-    auditLogs: (db.auditLogs || []).slice(0, 5).map((a: any) => [a.id, a.timestamp, a.action, a.entityType]),
-    receivables: (db.receivables || []).map((r: any) => [r.id, r.status, r.amount, r.paidAmount, r.updatedAt]),
+    products: scopeProducts.map((p: any) => [p.id, p.stock, p.price, p.category, p.updatedAt]),
+    comandas: scopeComandas.map((c: any) => [c.id, c.status, c.updatedAt, c.closedAt, (c.items || []).length]),
+    notifications: scopeNotifications.slice(0, 5).map((n: any) => [n.id, n.timestamp, n.status]),
+    stockMovements: scopeStockMovements.slice(0, 5).map((m: any) => [m.id, m.timestamp]),
+    auditLogs: scopeAuditLogs.slice(0, 5).map((a: any) => [a.id, a.timestamp, a.action, a.entityType]),
+    receivables: scopeReceivables.map((r: any) => [r.id, r.status, r.amount, r.paidAmount, r.updatedAt]),
     categories: (db.categoriesByScope || {})[sk] || [],
     unidades: (db.unidadesByScope || {})[sk] || [],
     whatsStatus: db.whatsStatus,
@@ -548,15 +663,147 @@ function getStateMeta(req?: any) {
   });
   return {
     version: crypto.createHash('sha1').update(source).digest('hex'),
+    updatedAt: new Date().toISOString(),
     counts: {
-      products: db.products?.length || 0,
-      comandas: db.comandas?.length || 0,
-      notifications: db.notifications?.length || 0,
-      stockMovements: db.stockMovements?.length || 0,
-      auditLogs: db.auditLogs?.length || 0,
-      receivables: db.receivables?.length || 0
+      products: scopeProducts.length,
+      comandas: scopeComandas.length,
+      notifications: scopeNotifications.length,
+      stockMovements: scopeStockMovements.length,
+      auditLogs: scopeAuditLogs.length,
+      receivables: scopeReceivables.length
     }
   };
+}
+
+async function pullChangesFromSupabase(scope = DEFAULT_SCOPE, since = '') {
+  if (!supabase) return null;
+  const normalizedScope = normalizeScope(scope);
+  const sinceDate = since && !Number.isNaN(new Date(since).getTime())
+    ? new Date(since).toISOString()
+    : new Date(Date.now() - 60_000).toISOString();
+
+  try {
+    const [cats, units, prods, coms, notifs, stockMovs] = await Promise.all([
+      applyScopeFilter(supabase.from('categories').select('name,company_id,workspace_id,space_id'), normalizedScope),
+      applyScopeFilter(supabase.from('unidades').select('name,company_id,workspace_id,space_id'), normalizedScope),
+      applyScopeFilter(
+        supabase
+          .from('products')
+          .select('id,code,name,price,stock,category,updated_at,company_id,workspace_id,space_id')
+          .gte('updated_at', sinceDate),
+        normalizedScope
+      ),
+      applyScopeFilter(
+        supabase
+          .from('comandas')
+          .select('*')
+          .gte('updated_at', sinceDate)
+          .order('updated_at', { ascending: false }),
+        normalizedScope
+      ),
+      applyScopeFilter(
+        supabase
+          .from('notifications')
+          .select('*')
+          .gte('timestamp', sinceDate)
+          .order('timestamp', { ascending: false })
+          .limit(30),
+        normalizedScope
+      ),
+      applyScopeFilter(
+        supabase
+          .from('stock_movements')
+          .select('*')
+          .gte('timestamp', sinceDate)
+          .order('timestamp', { ascending: false })
+          .limit(100),
+        normalizedScope
+      )
+    ]);
+
+    const sk = getScopeKey(normalizedScope);
+    const categories = (cats.data || []).map((c: any) => c.name);
+    const unidades = (units.data || []).map((u: any) => u.name);
+
+    return {
+      __partial: true,
+      __since: sinceDate,
+      __meta: getStateMeta({
+        query: {
+          company: normalizedScope.companyId,
+          workspace: normalizedScope.workspaceId,
+          space: normalizedScope.spaceId
+        }
+      }),
+      categories,
+      unidades,
+      categoriesByScope: { [sk]: categories },
+      unidadesByScope: { [sk]: unidades },
+      products: (prods.data || []).map((p: any) => ({
+        companyId: p.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: p.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: p.space_id || DEFAULT_SCOPE.spaceId,
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        price: Number(p.price) || 0,
+        stock: Number(p.stock) || 0,
+        category: p.category,
+        updatedAt: p.updated_at
+      })),
+      comandas: (coms.data || []).map((c: any) => ({
+        companyId: c.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: c.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: c.space_id || DEFAULT_SCOPE.spaceId,
+        id: c.id,
+        clientName: c.client_name,
+        clientType: c.client_type,
+        clientEmail: c.client_email,
+        clientPhone: c.client_phone,
+        courseOrTraining: c.course_or_training,
+        month: c.month,
+        status: c.status,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        closedAt: c.closed_at,
+        unit: c.units,
+        closureReminderActive: !!c.closure_reminder_active,
+        items: c.items || []
+      })).filter((c: any) => !isGeneratedModelComanda(c)),
+      notifications: (notifs.data || []).map((n: any) => ({
+        companyId: n.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: n.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: n.space_id || DEFAULT_SCOPE.spaceId,
+        id: n.id,
+        timestamp: n.timestamp,
+        recipient: n.recipient,
+        course: n.course,
+        contact: n.contact,
+        type: n.type,
+        message: n.message,
+        status: n.status,
+        sender: n.sender
+      })),
+      stockMovements: (stockMovs.data || []).map((m: any) => ({
+        companyId: m.company_id || DEFAULT_SCOPE.companyId,
+        workspaceId: m.workspace_id || DEFAULT_SCOPE.workspaceId,
+        spaceId: m.space_id || DEFAULT_SCOPE.spaceId,
+        id: m.id,
+        productId: m.product_id,
+        productName: m.product_name,
+        productCode: m.product_code,
+        type: m.type,
+        quantity: m.quantity,
+        price: Number(m.price) || 0,
+        totalValue: Number(m.total_value) || 0,
+        reference: m.reference,
+        timestamp: m.timestamp
+      }))
+    };
+  } catch (e: any) {
+    console.error('[SalesFlow] Supabase changes pull failed:', e?.message);
+    return null;
+  }
 }
 
 // --- Express app setup ---
@@ -565,18 +812,42 @@ app.use(express.json({ limit: '15mb' }));
 
 app.get('/api/state', async (req: any, res: any) => {
   const light = req.query?.light === '1';
-  const pulled = await pullFromSupabase(db, light);
-  if (pulled) {
-    db = pulled;
-    saveDb();
+  const scope = getScopeFromReq(req);
+  const cacheKey = `${getScopeKey(scope)}:${light ? 'light' : 'full'}`;
+  const cached = statePullCache.get(cacheKey);
+  if (cached && cached > Date.now()) {
+    res.setHeader('Cache-Control', 'private, max-age=3, stale-while-revalidate=10');
+    res.json({ ...getStateResponse(light, req), __cache: 'hit' });
+    return;
   }
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
+
+  const pulled = await pullFromSupabase(db, light, scope);
+  if (pulled) {
+    db = mergeScopedState(db, pulled, scope);
+    saveDb();
+    statePullCache.set(cacheKey, Date.now() + STATE_CACHE_TTL_MS);
+  }
+  res.setHeader('Cache-Control', 'private, max-age=3, stale-while-revalidate=10');
   res.json(getStateResponse(light, req));
 });
 
 app.get('/api/state/meta', async (req: any, res: any) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.json(getStateMeta(req));
+});
+
+app.get('/api/state/changes', async (req: any, res: any) => {
+  const scope = getScopeFromReq(req);
+  const changes = await pullChangesFromSupabase(scope, String(req.query?.since || ''));
+  res.setHeader('Cache-Control', 'private, max-age=3, stale-while-revalidate=10');
+  if (!changes) {
+    res.json({ __partial: false, ...getStateResponse(true, req) });
+    return;
+  }
+  db = mergePartialState(db, changes, scope);
+  saveDb();
+  changes.__meta = getStateMeta(req);
+  res.json(changes);
 });
 
 app.post('/api/products/images', async (req: any, res: any) => {

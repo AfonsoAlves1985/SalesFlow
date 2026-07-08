@@ -353,6 +353,7 @@ export default function App() {
   const comandaCooldownUntilRef = useRef(0);
   const comandaVersionRef = useRef(0);
   const stateMetaVersionRef = useRef('');
+  const lastRemoteSyncAtRef = useRef('');
   const requestedProductImagesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -544,10 +545,114 @@ export default function App() {
     });
   };
 
+  const buildScopedApiUrl = (path: string, params: Record<string, string> = {}) => {
+    const query = new URLSearchParams({
+      company: activeCompanyId,
+      workspace: activeWorkspaceId,
+      space: activeSpaceId,
+      ...params
+    });
+    return `${path}?${query.toString()}`;
+  };
+
+  const scopedCount = (items: ScopeFields[]) => items.filter(item => isInScope(item, activeScope)).length;
+
+  const mergeScopedListById = <T extends ScopeFields & { id: string }>(
+    incoming: T[],
+    current: T[],
+    mergeItem: (incomingItem: T, currentItem?: T) => T = item => item
+  ) => {
+    if (!incoming.length) return current;
+    const byId = new Map(current.map(item => [item.id, item]));
+    incoming.map(withDefaultScope).forEach(item => {
+      byId.set(item.id, mergeItem(item, byId.get(item.id)));
+    });
+    return Array.from(byId.values());
+  };
+
+  const mergeRecentScopedList = <T extends ScopeFields & { id: string; timestamp?: string }>(
+    incoming: T[],
+    current: T[],
+    limit: number
+  ) => {
+    if (!incoming.length) return current;
+    const byId = new Map<string, T>();
+    [...incoming.map(withDefaultScope), ...current].forEach(item => {
+      if (item?.id && !byId.has(item.id)) byId.set(item.id, item);
+    });
+    return Array.from(byId.values())
+      .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+      .slice(0, limit);
+  };
+
+  const applyRemoteChanges = (data: any) => {
+    if (!data?.__partial) return false;
+    if (data.__meta?.version) stateMetaVersionRef.current = data.__meta.version;
+    if (data.__meta?.updatedAt) lastRemoteSyncAtRef.current = data.__meta.updatedAt;
+
+    const counts = data.__meta?.counts;
+    if (counts) {
+      const serverDeletedRows =
+        counts.products < scopedCount(productsRef.current) ||
+        counts.comandas < scopedCount(comandasRef.current) ||
+        counts.stockMovements < scopedCount(stockMovementsRef.current) ||
+        counts.notifications < scopedCount(notificationsRef.current);
+      if (serverDeletedRows) return false;
+    }
+
+    if (Array.isArray(data.products) && data.products.length > 0) {
+      const mergedProducts = mergeScopedListById<Product>(
+        data.products,
+        productsRef.current,
+        (incoming, current) => !incoming.image && current?.image ? { ...incoming, image: current.image } : incoming
+      );
+      setProducts(mergedProducts);
+      productsRef.current = mergedProducts;
+      localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
+    }
+
+    if (Array.isArray(data.comandas) && data.comandas.length > 0) {
+      const changedComandas = sanitizeComandas(data.comandas).map(withDefaultScope) as Comanda[];
+      const mergedComandas = mergeScopedListById<Comanda>(
+        changedComandas,
+        comandasRef.current,
+        (incoming, current) => current && isRemoteComandaOlder(incoming, current) ? current : incoming
+      );
+      setComandas(mergedComandas);
+      comandasRef.current = mergedComandas;
+      localStorage.setItem('salesflow_tickets_v2', JSON.stringify(mergedComandas));
+    }
+
+    if (Array.isArray(data.stockMovements) && data.stockMovements.length > 0) {
+      const mergedMovements = mergeRecentScopedList<StockMovement>(data.stockMovements, stockMovementsRef.current, 1000);
+      setStockMovements(mergedMovements);
+      stockMovementsRef.current = mergedMovements;
+    }
+
+    if (Array.isArray(data.notifications) && data.notifications.length > 0) {
+      const mergedNotifications = mergeRecentScopedList<any>(data.notifications, notificationsRef.current, 50);
+      setNotifications(mergedNotifications);
+      notificationsRef.current = mergedNotifications;
+      localStorage.setItem('salesflow_notifications', JSON.stringify(mergedNotifications));
+    }
+
+    if (Array.isArray(data.categories)) {
+      setCategoriesByScope(prev => ({ ...prev, [scopeKey]: data.categories }));
+    }
+    if (Array.isArray(data.unidades)) {
+      setUnidadesByScope(prev => ({ ...prev, [scopeKey]: data.unidades }));
+    }
+
+    return true;
+  };
+
   const applyRemoteState = (data: any) => {
     if (!data) return;
     if (data.__meta?.version) {
       stateMetaVersionRef.current = data.__meta.version;
+    }
+    if (data.__meta?.updatedAt) {
+      lastRemoteSyncAtRef.current = data.__meta.updatedAt;
     }
 
     // Sync comandas from server.
@@ -565,23 +670,30 @@ export default function App() {
     if (canApplyRemoteState) {
       const remoteComandas = Array.isArray(data.comandas) ? sanitizeComandas(data.comandas).map(withDefaultScope) : null;
       if (remoteComandas && JSON.stringify(remoteComandas) !== JSON.stringify(comandasRef.current)) {
-        const mergedComandas = mergeComandasFromRemote(remoteComandas as Comanda[], comandasRef.current);
-        if (JSON.stringify(mergedComandas) !== JSON.stringify(comandasRef.current)) {
-          setComandas(mergedComandas);
-          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(mergedComandas));
+        const unscopedComandas = comandasRef.current.filter(comanda => !isInScope(comanda, activeScope));
+        const localScopedComandas = comandasRef.current.filter(comanda => isInScope(comanda, activeScope));
+        const mergedScopedComandas = mergeComandasFromRemote(remoteComandas as Comanda[], localScopedComandas);
+        const nextComandas = [...unscopedComandas, ...mergedScopedComandas];
+        if (JSON.stringify(nextComandas) !== JSON.stringify(comandasRef.current)) {
+          setComandas(nextComandas);
+          localStorage.setItem('salesflow_tickets_v2', JSON.stringify(nextComandas));
         }
       }
 
       if (Array.isArray(data.products)) {
-        const mergedProducts = mergeProductsFromRemote(data.products.map(withDefaultScope), productsRef.current);
-        if (JSON.stringify(mergedProducts) !== JSON.stringify(productsRef.current)) {
-          setProducts(mergedProducts);
-          localStorage.setItem('salesflow_products_v2', JSON.stringify(mergedProducts));
+        const unscopedProducts = productsRef.current.filter(product => !isInScope(product, activeScope));
+        const localScopedProducts = productsRef.current.filter(product => isInScope(product, activeScope));
+        const mergedScopedProducts = mergeProductsFromRemote(data.products.map(withDefaultScope), localScopedProducts);
+        const nextProducts = [...unscopedProducts, ...mergedScopedProducts];
+        if (JSON.stringify(nextProducts) !== JSON.stringify(productsRef.current)) {
+          setProducts(nextProducts);
+          localStorage.setItem('salesflow_products_v2', JSON.stringify(nextProducts));
         }
       }
 
       if (Array.isArray(data.stockMovements) && JSON.stringify(data.stockMovements) !== JSON.stringify(stockMovementsRef.current)) {
-        setStockMovements(data.stockMovements.map(withDefaultScope));
+        const unscopedMovements = stockMovementsRef.current.filter(movement => !isInScope(movement, activeScope));
+        setStockMovements([...unscopedMovements, ...data.stockMovements.map(withDefaultScope)]);
       }
 
       if (Array.isArray(data.categories) && JSON.stringify(data.categories) !== JSON.stringify(categoriesRef.current)) {
@@ -593,18 +705,29 @@ export default function App() {
       }
 
       if (Array.isArray(data.notifications) && JSON.stringify(data.notifications) !== JSON.stringify(notificationsRef.current)) {
-        setNotifications(data.notifications);
-        localStorage.setItem('salesflow_notifications', JSON.stringify(data.notifications));
+        const unscopedNotifications = notificationsRef.current.filter(notification => !isInScope(notification, activeScope));
+        const nextNotifications = [...unscopedNotifications, ...data.notifications.map(withDefaultScope)];
+        setNotifications(nextNotifications);
+        localStorage.setItem('salesflow_notifications', JSON.stringify(nextNotifications));
       }
 
       if (Array.isArray(data.auditLogs) && JSON.stringify(data.auditLogs) !== JSON.stringify(auditLogsRef.current)) {
-        const mergedAuditLogs = mergeAuditLogs(data.auditLogs, auditLogsRef.current);
+        const unscopedAuditLogs = auditLogsRef.current.filter(log => !isInScope(log, activeScope));
+        const mergedAuditLogs = mergeAuditLogs(data.auditLogs.map(withDefaultScope), unscopedAuditLogs);
         setAuditLogs(mergedAuditLogs);
         localStorage.setItem('salesflow_audit_logs', JSON.stringify(mergedAuditLogs));
       }
 
       if (Array.isArray(data.receivables) && JSON.stringify(data.receivables) !== JSON.stringify(receivablesRef.current)) {
-        const mergedReceivables = syncReceivablesFromComandas(comandasRef.current, mergeReceivables(data.receivables.map(withDefaultScope), receivablesRef.current));
+        const unscopedReceivables = receivablesRef.current.filter(receivable => !isInScope(receivable, activeScope));
+        const localScopedReceivables = receivablesRef.current.filter(receivable => isInScope(receivable, activeScope));
+        const mergedReceivables = [
+          ...unscopedReceivables,
+          ...syncReceivablesFromComandas(
+            comandasRef.current.filter(comanda => isInScope(comanda, activeScope)),
+            mergeReceivables(data.receivables.map(withDefaultScope), localScopedReceivables)
+          )
+        ];
         setReceivables(mergedReceivables);
         localStorage.setItem('salesflow_receivables', JSON.stringify(mergedReceivables));
       }
@@ -618,6 +741,22 @@ export default function App() {
       setSystemWhatsNumber(data.whatsNumber);
       localStorage.setItem('salesflow_system_whats_number', data.whatsNumber);
     }
+  };
+
+  const refreshRemoteState = async (forceFull = false) => {
+    if (!forceFull && lastRemoteSyncAtRef.current) {
+      const changesRes = await fetch(buildScopedApiUrl('/api/state/changes', {
+        since: lastRemoteSyncAtRef.current
+      }));
+      if (changesRes.ok) {
+        const changes = await changesRes.json();
+        if (applyRemoteChanges(changes)) return;
+      }
+    }
+
+    const stateRes = await fetch(buildScopedApiUrl('/api/state', { light: '1' }));
+    if (!stateRes.ok) return;
+    applyRemoteState(await stateRes.json());
   };
 
   // Check Supabase connection when mounting
@@ -769,11 +908,14 @@ export default function App() {
     }
 
     // Connect to Express back-office initial database state
-    fetch('/api/state?light=1')
+    fetch(buildScopedApiUrl('/api/state', { light: '1' }))
       .then(res => res.json())
       .then(data => {
         if (data.__meta?.version) {
           stateMetaVersionRef.current = data.__meta.version;
+        }
+        if (data.__meta?.updatedAt) {
+          lastRemoteSyncAtRef.current = data.__meta.updatedAt;
         }
         let needsSyncToServer = false;
 
@@ -992,18 +1134,17 @@ export default function App() {
     const interval = setInterval(async () => {
       try {
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        const metaRes = await fetch('/api/state/meta');
+        const metaRes = await fetch(buildScopedApiUrl('/api/state/meta'));
         if (!metaRes.ok) return;
         const meta = await metaRes.json();
         if (!meta?.version) return;
         if (!stateMetaVersionRef.current) {
           stateMetaVersionRef.current = meta.version;
+          if (meta.updatedAt) lastRemoteSyncAtRef.current = meta.updatedAt;
           return;
         }
         if (stateMetaVersionRef.current === meta.version) return;
-        const stateRes = await fetch('/api/state?light=1');
-        if (!stateRes.ok) return;
-        applyRemoteState(await stateRes.json());
+        await refreshRemoteState();
       } catch {}
     }, intervalMs);
 
@@ -1021,9 +1162,7 @@ export default function App() {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(async () => {
         try {
-          const res = await fetch('/api/state?light=1');
-          if (!res.ok) return;
-          applyRemoteState(await res.json());
+          await refreshRemoteState();
         } catch (err) {
           console.warn('[Supabase Realtime] refresh failed:', err);
         }
